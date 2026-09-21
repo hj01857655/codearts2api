@@ -61,6 +61,7 @@ type staticModel struct {
 	ID            string
 	ContextWindow int64
 	Benefit       bool
+	SupportsImages bool
 }
 
 // staticModels 静态兜底表：**只放实测确认可用的模型**。
@@ -74,7 +75,7 @@ type staticModel struct {
 var staticModels = []staticModel{
 	{ID: "GLM-5.2", ContextWindow: 202752},
 	{ID: "glm-5.2-sft-harmony", ContextWindow: 131072},
-	{ID: "Qwen3-VL-235B", ContextWindow: 131072},
+	{ID: "Qwen3-VL-235B", ContextWindow: 131072, SupportsImages: true},
 	// 限时福利（需领取；领取后实测可用，聊天自动带 maas_type: benefit）
 	{ID: "deepseek-v4-flash-0731", ContextWindow: 1048576, Benefit: true},
 	{ID: "deepseek-v4-pro-0813", ContextWindow: 1048576, Benefit: true},
@@ -478,7 +479,7 @@ func (h *Handler) modelKnownUnusable(model string) bool {
 func modelEntries(infos []upstream.ModelInfo) []map[string]any {
 	out := make([]map[string]any, 0, len(infos)+len(staticModels))
 	seen := map[string]bool{}
-	add := func(id string, ctx, maxOut int64, benefit bool) {
+	add := func(id string, ctx, maxOut int64, benefit, vision bool, name, desc string) {
 		if id == "" || seen[id] {
 			return
 		}
@@ -486,15 +487,43 @@ func modelEntries(infos []upstream.ModelInfo) []map[string]any {
 		if ctx == 0 {
 			ctx = 131072 // 兜底
 		}
+		if name == "" {
+			name = id
+		}
 		entry := map[string]any{
-			"id":             id,
-			"object":         "model",
-			"created":        1753600000,
-			"owned_by":       "codearts",
-			"context_length": ctx,
+			"id":                        id,
+			"object":                    "model",
+			"created":                   1753600000,
+			"owned_by":                  "codearts",
+			"name":                      name,
+			"context_length":            ctx,
+			"context_window":            ctx,
+			"supports_function_calling": true,
+			"supports_tool_calling":     true,
+			"supports_reasoning":       true,
+			"input_modalities":          []string{"text", "image"},
+			"output_modalities":         []string{"text"},
+			"supported_parameters": []string{
+				"temperature", "top_p", "max_tokens", "stream",
+				"tools", "tool_choice", "response_format",
+			},
+		}
+		if desc != "" {
+			entry["description"] = desc
 		}
 		if maxOut > 0 {
+			entry["max_tokens"] = maxOut
 			entry["max_output_tokens"] = maxOut
+		}
+		if vision {
+			entry["supports_images"] = true
+			entry["vision"] = true
+			entry["supports_vision"] = true
+		} else {
+			entry["supports_images"] = false
+			entry["vision"] = false
+			entry["supports_vision"] = false
+			entry["input_modalities"] = []string{"text"}
 		}
 		if benefit {
 			entry["benefit"] = true
@@ -502,17 +531,17 @@ func modelEntries(infos []upstream.ModelInfo) []map[string]any {
 		out = append(out, entry)
 	}
 	// addAlias 精确 ID + 就近补一条小写别名（已是小写则跳过）。
-	addAlias := func(id string, ctx, maxOut int64, benefit bool) {
-		add(id, ctx, maxOut, benefit)
+	addAlias := func(id string, ctx, maxOut int64, benefit, vision bool, name, desc string) {
+		add(id, ctx, maxOut, benefit, vision, name, desc)
 		if lower := strings.ToLower(id); lower != id {
-			add(lower, ctx, maxOut, benefit)
+			add(lower, ctx, maxOut, benefit, vision, name, desc)
 		}
 	}
 	for _, mi := range infos {
-		addAlias(mi.ID, mi.ContextWindow, mi.MaxTokens, mi.Benefit)
+		addAlias(mi.ID, mi.ContextWindow, mi.MaxTokens, mi.Benefit, mi.SupportsImages, mi.Name, mi.Desc)
 	}
 	for _, sm := range staticModels {
-		addAlias(sm.ID, sm.ContextWindow, 0, sm.Benefit)
+		addAlias(sm.ID, sm.ContextWindow, 0, sm.Benefit, sm.SupportsImages, "", "")
 	}
 	return out
 }

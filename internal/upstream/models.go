@@ -46,12 +46,24 @@ type ModelInfo struct {
 	// Benefit 限时福利（免费套餐）模型：聊天需带 maas_type: benefit 头。
 	Benefit bool   `json:"benefit,omitempty"`
 	Desc    string `json:"desc,omitempty"`
+	// SupportsImages 上游报告的视觉能力；未报告时按模型名推断（含 VL/Vision）。
+	SupportsImages bool `json:"supportsImages,omitempty"`
 }
 
 // 冷启动种子：福利套餐轮换后新增的模型在首次发现前也要走福利路由，
 // 少带一次头就是一次 404，宁可多带。发现结果只会在此基础上增补。
 var seedBenefitModels = []string{
 	"deepseek-v4-flash-0731", "deepseek-v4-pro-0813", "glm-5.3-flash",
+}
+
+// inferVision 按模型名推断视觉能力：含 VL/Vision/vision/image 的视为多模态。
+// 上游 model_parameters 不一定填 supports_images，这是兜底。
+func inferVision(id string) bool {
+	lower := strings.ToLower(id)
+	return strings.Contains(lower, "vl") ||
+		strings.Contains(lower, "vision") ||
+		strings.Contains(lower, "image") ||
+		strings.Contains(lower, "multimodal")
 }
 
 // 内置模型种子（大小写归一用，不标记福利）。
@@ -263,6 +275,7 @@ func richerModel(cur, next ModelInfo) ModelInfo {
 		keep, drop = next, cur
 	}
 	keep.Benefit = benefit
+	keep.SupportsImages = cur.SupportsImages || next.SupportsImages
 	if keep.Name == "" {
 		keep.Name = drop.Name
 	}
@@ -348,10 +361,11 @@ func (c *Client) fetchAgentModels(cred SignCredential) ([]ModelInfo, error) {
 				ModelName  string `json:"model_name"`
 				ModelID    string `json:"model_id"`
 				Params     struct {
-					ContextWindow int64  `json:"context_window"`
-					MaxTokens     int64  `json:"max_tokens"`
-					ModelID       string `json:"model_id"`
-					ModelDesc     string `json:"model_desc"`
+					ContextWindow  int64  `json:"context_window"`
+					MaxTokens      int64  `json:"max_tokens"`
+					ModelID        string `json:"model_id"`
+					ModelDesc      string `json:"model_desc"`
+					SupportsImages bool   `json:"supports_images"`
 				} `json:"model_parameters"`
 			} `json:"models"`
 		} `json:"gpts"`
@@ -366,11 +380,12 @@ func (c *Client) fetchAgentModels(cred SignCredential) ([]ModelInfo, error) {
 			continue
 		}
 		out = append(out, ModelInfo{
-			ID:            id,
-			Name:          id,
-			ContextWindow: m.Params.ContextWindow,
-			MaxTokens:     m.Params.MaxTokens,
-			Desc:          m.Params.ModelDesc,
+			ID:             id,
+			Name:           id,
+			ContextWindow:  m.Params.ContextWindow,
+			MaxTokens:      m.Params.MaxTokens,
+			Desc:           m.Params.ModelDesc,
+			SupportsImages: m.Params.SupportsImages || inferVision(id),
 		})
 	}
 	return out, nil
