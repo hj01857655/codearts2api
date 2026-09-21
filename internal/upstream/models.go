@@ -486,8 +486,8 @@ func (c *Client) fetchBuiltinModels(accountID string, cred SignCredential) ([]Mo
 
 // ClaimBenefit 领取限时福利（幂等：已领取返回成功）。官方客户端打开模型菜单即调用。
 //
-// 这是对账号的写操作，默认不随模型发现自动执行（见 Client.SetBenefitAutoClaim）：
-// 需要领取时显式调用（`codearts2api models -claim` 或打开自动领取开关）。
+// 这是对账号的写操作；New 里默认开启自动领取（见 Client.SetBenefitAutoClaim），
+// 所以模型发现时会先领取一次；要关闭用 SetBenefitAutoClaim(false)。
 func (c *Client) ClaimBenefit(cred SignCredential) error {
 	body, _ := json.Marshal(map[string]any{})
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -563,14 +563,32 @@ func (c *Client) BenefitStatus(cred SignCredential) (createTime int64, err error
 	return out.Result.CreateTime, nil
 }
 
-// BenefitBalance 免费额度余额（GET /api/v1/user/tokens/balance）。
-// 返回 total_quota（总额度）、total_balance（剩余）、used_amount（已用）。
-func (c *Client) BenefitBalance(cred SignCredential) (total, remain, used int64, err error) {
+// BenefitBalanceInfo 一次余额查询的完整结果（上游 /api/v1/user/tokens/balance）。
+//
+// 上游同时给日、月两个维度。total_quota/total_balance/used_amount 是日维度的
+// 别名（实测 total_quota == daily_token_limit、used_amount == daily_tokens_used），
+// 只取这三个数会把「今日」读成「累计」，所以两个维度都留下。
+type BenefitBalanceInfo struct {
+	DailyLimit   int64 `json:"daily_limit"`   // daily_token_limit 当日额度
+	DailyUsed    int64 `json:"daily_used"`    // daily_tokens_used 当日已用
+	TotalQuota   int64 `json:"total_quota"`   // 当日额度（上游别名）
+	TotalBalance int64 `json:"total_balance"` // 当日剩余
+	UsedAmount   int64 `json:"used_amount"`   // 当日已用（上游别名）
+	MonthlyLimit int64 `json:"monthly_limit"` // monthly_token_limit 本月额度（0 = 未设上限）
+	MonthlyUsed  int64 `json:"monthly_used"`  // monthly_tokens_used 本月已用
+	CreateTime   int64 `json:"create_time"`
+	UpdateTime   int64 `json:"update_time"`
+	ExpireTime   int64 `json:"expire_time"`
+}
+
+// BenefitBalanceDetail 查询余额并保留日/月两个维度。
+func (c *Client) BenefitBalanceDetail(cred SignCredential) (BenefitBalanceInfo, error) {
+	var info BenefitBalanceInfo
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.benefitURL(EpBenefitBalance), nil)
 	if err != nil {
-		return 0, 0, 0, err
+		return info, err
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-Language", "zh-cn")
@@ -580,28 +598,64 @@ func (c *Client) BenefitBalance(cred SignCredential) (total, remain, used int64,
 	signRequest(req, []byte{}, cred)
 	resp, err := c.http.Do(req)
 	if err != nil {
-		return 0, 0, 0, err
+		return info, err
 	}
 	defer resp.Body.Close()
 	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if resp.StatusCode >= 400 {
-		return 0, 0, 0, &ApiError{Code: resp.StatusCode, Status: resp.StatusCode, Message: truncateStr(string(raw), 300), Path: EpBenefitBalance}
+		return info, &ApiError{Code: resp.StatusCode, Status: resp.StatusCode, Message: truncateStr(string(raw), 300), Path: EpBenefitBalance}
 	}
 	var out struct {
 		ErrorCode string `json:"error_code"`
 		Result    struct {
-			TotalQuota   int64 `json:"total_quota"`
-			TotalBalance int64 `json:"total_balance"`
-			UsedAmount   int64 `json:"used_amount"`
+			DailyTokenLimit   int64 `json:"daily_token_limit"`
+			DailyTokensUsed   int64 `json:"daily_tokens_used"`
+			TotalQuota        int64 `json:"total_quota"`
+			TotalBalance      int64 `json:"total_balance"`
+			UsedAmount        int64 `json:"used_amount"`
+			MonthlyTokenLimit int64 `json:"monthly_token_limit"`
+			MonthlyTokensUsed int64 `json:"monthly_tokens_used"`
+			CreateTime        int64 `json:"create_time"`
+			UpdateTime        int64 `json:"update_time"`
+			ExpireTime        int64 `json:"expire_time"`
 		} `json:"result"`
 	}
 	if err := json.Unmarshal(raw, &out); err != nil {
-		return 0, 0, 0, fmt.Errorf("parse benefit balance: %w", err)
+		return info, fmt.Errorf("parse benefit balance: %w", err)
 	}
 	if out.ErrorCode != "" && out.ErrorCode != "0000" {
-		return 0, 0, 0, fmt.Errorf("benefit balance error_code=%s", out.ErrorCode)
+		return info, fmt.Errorf("benefit balance error_code=%s", out.ErrorCode)
 	}
-	return out.Result.TotalQuota, out.Result.TotalBalance, out.Result.UsedAmount, nil
+	r := out.Result
+	info = BenefitBalanceInfo{
+		DailyLimit: r.DailyTokenLimit, DailyUsed: r.DailyTokensUsed,
+		TotalQuota: r.TotalQuota, TotalBalance: r.TotalBalance, UsedAmount: r.UsedAmount,
+		MonthlyLimit: r.MonthlyTokenLimit, MonthlyUsed: r.MonthlyTokensUsed,
+		CreateTime: r.CreateTime, UpdateTime: r.UpdateTime, ExpireTime: r.ExpireTime,
+	}
+	// 上游偶尔只回别名那一套（反之亦然）：补齐，免得日维度出现 0。
+	if info.DailyLimit == 0 && info.TotalQuota != 0 {
+		info.DailyLimit = info.TotalQuota
+	}
+	if info.DailyUsed == 0 && info.UsedAmount != 0 {
+		info.DailyUsed = info.UsedAmount
+	}
+	if info.TotalQuota == 0 && info.DailyLimit != 0 {
+		info.TotalQuota = info.DailyLimit
+	}
+	if info.UsedAmount == 0 && info.DailyUsed != 0 {
+		info.UsedAmount = info.DailyUsed
+	}
+	return info, nil
+}
+
+// BenefitBalance 只取日维度三个数的兼容入口。
+func (c *Client) BenefitBalance(cred SignCredential) (total, remain, used int64, err error) {
+	info, err := c.BenefitBalanceDetail(cred)
+	if err != nil {
+		return 0, 0, 0, err
+	}
+	return info.TotalQuota, info.TotalBalance, info.UsedAmount, nil
 }
 
 // fetchBenefitModels 拉取限时福利模型（gateway/config），返回结果整体标记 Benefit。

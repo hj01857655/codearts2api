@@ -113,17 +113,38 @@ func (h *Handler) adminCredits(w http.ResponseWriter, r *http.Request) {
 }
 
 // benefitResult 单账号福利操作结果。
+//
+// 额度字段按上游的两个维度分组：daily_* 是当日、monthly_* 是本月。
+// 上游的 total_quota/total_balance/used_amount 只是日维度的别名（实测
+// total_quota == daily_token_limit），旧前端读的是这三个；面板显示必须带
+// 时间维度，否则「本用 1009 万」会被读成「总共用了 549」。
 type benefitResult struct {
 	UID        string `json:"uid"`
 	OK         bool   `json:"ok"`
 	Message    string `json:"message,omitempty"`
 	CreateTime int64  `json:"create_time,omitempty"` // 上次签到时间（毫秒）
-	Total      int64  `json:"total,omitempty"`       // 总额度
-	Remain     int64  `json:"remain,omitempty"`      // 剩余
-	Used       int64  `json:"used,omitempty"`        // 已用
-	// HasBalance 标记 Total/Remain/Used 是上游真实返回的。没有它就无法区分
-	// 「余额就是 0」与「余额没查到」，面板会把后者当 0 显示并计入合计。
+	Total      int64  `json:"total,omitempty"`       // 当日额度（上游 total_quota 别名）
+	Remain     int64  `json:"remain,omitempty"`      // 当日剩余
+	Used       int64  `json:"used,omitempty"`        // 当日已用
+	// DailyLimit/DailyUsed/MonthlyLimit/MonthlyUsed 是上游的原始维度字段。
+	// MonthlyLimit=0 表示未设月度上限（不是「额度用尽」），前端按此区分。
+	DailyLimit   int64 `json:"daily_limit,omitempty"`
+	DailyUsed    int64 `json:"daily_used,omitempty"`
+	MonthlyLimit int64 `json:"monthly_limit,omitempty"`
+	MonthlyUsed  int64 `json:"monthly_used,omitempty"`
+	UpdateTime   int64 `json:"update_time,omitempty"`
+	// HasBalance 标记上述额度字段是上游真实返回的。没有它就无法区分
+	// 「额度就是 0」与「余额没查到」，面板会把后者当 0 显示并计入合计。
 	HasBalance bool `json:"has_balance"`
+}
+
+// fillBalance 把一次余额查询的结果写进 benefitResult。
+func fillBalance(res *benefitResult, info upstream.BenefitBalanceInfo) {
+	res.Total, res.Remain, res.Used = info.TotalQuota, info.TotalBalance, info.UsedAmount
+	res.DailyLimit, res.DailyUsed = info.DailyLimit, info.DailyUsed
+	res.MonthlyLimit, res.MonthlyUsed = info.MonthlyLimit, info.MonthlyUsed
+	res.UpdateTime = info.UpdateTime
+	res.HasBalance = true
 }
 
 // adminCheckin 真正领取限时福利（POST /api/v1/benefit/claim）并返回余额。
@@ -152,18 +173,14 @@ func (h *Handler) adminCheckin(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		// 再查余额
-			total, remain, used, berr := h.cfg.Upstream.BenefitBalance(cred)
-			if berr != nil {
-				res.OK = true
-				res.Message = "claimed, balance: " + berr.Error()
-			} else {
-				res.OK = true
-				res.Message = "claimed"
-				res.Total = total
-				res.Remain = remain
-				res.Used = used
-				res.HasBalance = true
-			}
+		if info, berr := h.cfg.Upstream.BenefitBalanceDetail(cred); berr != nil {
+			res.OK = true
+			res.Message = "claimed, balance: " + berr.Error()
+		} else {
+			res.OK = true
+			res.Message = "claimed"
+			fillBalance(&res, info)
+		}
 		results = append(results, res)
 	}
 	okCount := 0
@@ -200,10 +217,8 @@ func (h *Handler) adminBenefitStatus(w http.ResponseWriter, r *http.Request) {
 			res.CreateTime = ct
 		}
 		// 余额
-		total, remain, used, berr := h.cfg.Upstream.BenefitBalance(cred)
-		if berr == nil {
-			res.Total, res.Remain, res.Used = total, remain, used
-			res.HasBalance = true
+		if info, berr := h.cfg.Upstream.BenefitBalanceDetail(cred); berr == nil {
+			fillBalance(&res, info)
 		} else {
 			// 余额失败原先完全静默：面板把 0 当成真实额度显示，还折进合计行。
 			res.Message = appendMsg(res.Message, "balance: "+berr.Error())

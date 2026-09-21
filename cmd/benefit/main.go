@@ -101,14 +101,21 @@ func main() {
 }
 
 func showBalance(c *upstream.Client, cred upstream.SignCredential) {
-	total, remain, used, err := c.BenefitBalance(cred)
+	info, err := c.BenefitBalanceDetail(cred)
 	if err != nil {
 		fmt.Printf("  余额查询失败: %v\n", err)
 		return
 	}
 	pct := 0.0
-	if total > 0 {
-		pct = float64(remain) / float64(total) * 100
+	if info.TotalQuota > 0 {
+		pct = float64(info.TotalBalance) / float64(info.TotalQuota) * 100
 	}
-	fmt.Printf("  免费额度: %d / %d（已用 %d，剩余 %.1f%%）\n", remain, total, used, pct)
+	// 上游给的是日/月两个维度：只报日额度会让人把「本用 1000 万」读成总共用了 549。
+	fmt.Printf("  今日额度: %d / %d（已用 %d，剩余 %.1f%%）\n",
+		info.TotalBalance, info.TotalQuota, info.UsedAmount, pct)
+	if info.MonthlyLimit > 0 {
+		fmt.Printf("  本月已用: %d / %d\n", info.MonthlyUsed, info.MonthlyLimit)
+	} else {
+		fmt.Printf("  本月已用: %d（未设月度上限）\n", info.MonthlyUsed)
+	}
 }

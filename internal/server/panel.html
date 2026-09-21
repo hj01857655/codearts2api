@@ -144,6 +144,8 @@ label.fld>.hint{display:block;font-size:11.5px;color:var(--ink-3);margin-top:4px
 /* ── 账号表（签名元素：健康色条）─────────────────────────────────── */
 .tbl-wrap{overflow-x:auto}
 .acc{width:100%;border-collapse:collapse;font-size:13px;min-width:760px}
+/* 福利页比账号池多一列（本月已用），单独放宽，不影响账号池表格 */
+#view-benefit .acc{min-width:880px}
 .acc th{text-align:left;font-weight:500;font-size:11.5px;color:var(--ink-3);padding:9px 11px;border-bottom:1px solid var(--line);white-space:nowrap}
 .acc td{padding:11px;border-bottom:1px solid var(--line-soft);vertical-align:middle}
 .acc tr:last-child td{border-bottom:none}
@@ -415,7 +417,7 @@ button.chip:hover{border-color:var(--accent);color:var(--ink)}
           <table class="acc">
             <thead><tr>
               <th class="mark" aria-hidden="true"></th>
-              <th>账号</th><th>上次领取</th><th>总额度</th><th>已用</th><th>剩余</th><th>剩余占比</th>
+              <th>账号</th><th>上次领取</th><th>今日额度</th><th>今日已用</th><th>今日剩余</th><th>剩余占比</th><th>本月已用</th>
             </tr></thead>
             <tbody id="benefitBody"></tbody>
             <tfoot id="benefitFoot" hidden></tfoot>
@@ -720,19 +722,20 @@ function renderBenefit(){
   const body = $("benefitBody");
   const results = state.benefit && state.benefit.results;
   if (!results || !results.length){
-    body.innerHTML = '<tr><td colspan="7" class="empty">' +
+    body.innerHTML = '<tr><td colspan="8" class="empty">' +
       (state.benefit ? "上游未返回数据" : "点击「刷新额度」查询上游签到状态与余额") + '</td></tr>';
     $("benefitFoot").hidden = true;
     $("benefitNote").textContent = state.benefit ? "无数据" : "未查询";
     return;
   }
-  let totalSum = 0, usedSum = 0, remainSum = 0, counted = 0;
+  let totalSum = 0, usedSum = 0, remainSum = 0, monthlySum = 0, counted = 0;
   body.innerHTML = results.map(r => {
-    // has_balance 区分「余额就是 0」与「余额没查到」：后者必须显示占位符，
+    // has_balance 区分「额度就是 0」与「余额没查到」：后者必须显示占位符，
     // 否则 0 会被当成真实额度读，还会被折进合计行。
     const has = !!r.has_balance;
     const total = Number(r.total || 0), used = Number(r.used || 0), remain = Number(r.remain || 0);
-    if (has){ totalSum += total; usedSum += used; remainSum += remain; counted++; }
+    const monthly = Number(r.monthly_used || 0);
+    if (has){ totalSum += total; usedSum += used; remainSum += remain; monthlySum += monthly; counted++; }
     const pct = has && total > 0 ? Math.round(remain / total * 100) : 0;
     const color = !has ? "var(--ink-3)" : (pct > 50 ? "var(--ok)" : (pct > 20 ? "var(--warn)" : "var(--bad)"));
     // 领取状态查询失败时 create_time 同样是 0，与「从未领取」不是一回事。
@@ -751,13 +754,14 @@ function renderBenefit(){
       '<td>' + (has
         ? '<div class="bar"><i style="width:' + pct + '%;background:' + color + '"></i></div>' +
           '<span class="num muted" style="font-size:11px">' + pct + '%</span>'
-        : dash) + '</td></tr>';
+        : dash) + '</td>' +
+      '<td class="num muted">' + (has ? monthly.toLocaleString() : dash) + '</td></tr>';
   }).join("");
   // 合计只统计拿得到余额的账号，并明示统计范围——把没查到的当 0 加进去会凭空缩小总数。
   $("benefitNote").textContent = counted === results.length
     ? results.length + " 个账号"
     : counted + " / " + results.length + " 个账号有余额";
-  // 合计行与各列对齐：总额度/已用/剩余/剩余占比，放在 tfoot 而非 header 文字，多账号时一目了然。
+  // 合计行与各列对齐：今日额度/已用/剩余/剩余占比/本月已用，放在 tfoot 而非 header 文字。
   const totPct = totalSum > 0 ? Math.round(remainSum / totalSum * 100) : 0;
   const totColor = !counted ? "var(--ink-3)" : (totPct > 50 ? "var(--ok)" : (totPct > 20 ? "var(--warn)" : "var(--bad)"));
   const foot = $("benefitFoot");
@@ -772,7 +776,8 @@ function renderBenefit(){
     '<td class="num muted">' + usedSum.toLocaleString() + '</td>' +
     '<td class="num" style="color:' + totColor + '">' + remainSum.toLocaleString() + '</td>' +
     '<td><div class="bar"><i style="width:' + totPct + '%;background:' + totColor + '"></i></div>' +
-      '<span class="num muted" style="font-size:11px">' + totPct + '%</span></td></tr>';
+      '<span class="num muted" style="font-size:11px">' + totPct + '%</span></td>' +
+    '<td class="num muted">' + monthlySum.toLocaleString() + '</td></tr>';
 }
 
 /* ── 渲染：模型 / 调度 / 日志 ─────────────────────────────────────── */
