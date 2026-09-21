@@ -1,6 +1,14 @@
 services:
   codearts2api:
-    build: .
+    build:
+      context: .
+      # 版本注入：构建时显式传入想标记的版本（否则容器内二进制报 dev）。
+      args:
+        # 留空时回退到 Dockerfile 的默认值（dev/none/unknown），
+        # 想让容器内版本号与 Release 一致，构建前显式传入。
+        VERSION: ${CA2A_BUILD_VERSION:-dev}
+        COMMIT: ${CA2A_BUILD_COMMIT:-none}
+        BUILD_DATE: ${CA2A_BUILD_DATE:-unknown}
     container_name: codearts2api
     restart: unless-stopped
     ports:

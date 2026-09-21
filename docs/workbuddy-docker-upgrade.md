@@ -32,7 +32,8 @@
 
 现状问题（本次要修的）：
 
-- 现有代码是 fork 之前的旧版：二进制**没有版本号**（构建时未注入 ldflags），`/status` 的 `version` 字段为空
+- 现有代码是旧版：升级前那份 `Dockerfile` 构建时**未注入版本号**，所以容器里 `codearts2api -version` 永远报 `dev`、`/status` 的 `version` 字段为空
+  （该缺陷已在本仓库修复：`Dockerfile` 新增 `VERSION`/`COMMIT`/`BUILD_DATE` 构建参数，`docker-compose.yml` 透传，步骤 2 会传入实际版本）
 - `config.json` 里**没有 `update_repo`**，控制台「检测更新」只会显示「未配置 update_repo」
 - `/opt/codearts2api/config.json` 里的注释写着 `max_concurrent`「默认 5」，属旧文档错误（代码内置默认是 1），升级后会随新模板纠正
 
@@ -77,12 +78,23 @@ docker compose ps
 cd /opt/codearts2api
 git fetch --tags origin        # 或 fork，见步骤 1
 git checkout v0.1.1
+
+# 传入版本号后再构建：Dockerfile 已支持 VERSION/COMMIT/BUILD_DATE 构建参数，
+# 不传则容器内二进制报 dev（与 Releases 的版本号对不上）。
+export CA2A_BUILD_VERSION=$(git describe --tags --always)
+export CA2A_BUILD_COMMIT=$(git rev-parse --short HEAD)
+export CA2A_BUILD_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+echo "将注入：$CA2A_BUILD_VERSION / $CA2A_BUILD_COMMIT / $CA2A_BUILD_DATE"
+
 docker compose up -d --build
 docker compose ps
 docker compose logs --tail=30
 ```
 
-说明：镜像是多阶段构建（`golang:1.24-alpine` 构建 → `alpine:3.20` 运行），首次构建需拉取基础镜像，北京机房可能较慢，请等待完成后再判断。
+说明：
+
+- 镜像是多阶段构建（`golang:1.24-alpine` 构建 → `alpine:3.20` 运行），首次构建需拉取基础镜像，北京机房可能较慢，请等待完成后再判断。
+- 当前使用旧版 `docker-compose.yml` 时也请拉取新代码后再构建（步骤 2 的 `git checkout` 已完成），新版已补上版本注入所需构建参数。
 
 ### 步骤 3：补齐 update_repo
 
@@ -125,7 +137,7 @@ curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:7866/healthz
 
 | 检查项 | 期望结果 |
 | --- | --- |
-| `codearts2api -version` | `codearts2api 0.1.1 (commit ..., built ...)` |
+| `codearts2api -version` | `codearts2api v0.1.1 (commit ..., built ...)`（不再是 `dev`） |
 | `docker compose ps` | 容器 `Up`，7866 映射正常 |
 | `/status` 的 `version` | 不再是空值，为 `0.1.1` |
 | `/status` 的账号数 | 与升级前一致（**不得减少**，账号数减少说明凭证卷出问题，立即停止并报告）；可用 `/admin/api/overview` 的 `stats.total` 快速核对 |
