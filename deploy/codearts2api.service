@@ -5,14 +5,19 @@ Wants=network-online.target
 
 [Service]
 Type=simple
+# 运行用户：非 Ubuntu 的机器要改成实际存在的用户，并把 /opt/codearts2api chown 给
+# 该用户——服务要写 auths/ 与 data/，在线更新还要原子替换 bin/ 下的二进制。
 User=ubuntu
 WorkingDirectory=/opt/codearts2api
-EnvironmentFile=/opt/codearts2api/.env
+# 前缀 "-" 表示 .env 可缺省：没有它时仅靠 config.json 的 api_key 启动。
+EnvironmentFile=-/opt/codearts2api/.env
 ExecStart=/opt/codearts2api/bin/codearts2api -config /opt/codearts2api/config.json
 Restart=always
 RestartSec=5
 NoNewPrivileges=true
 ProtectSystem=full
+# ReadWritePaths 的两个路径必须已存在，否则 systemd 以 226/NAMESPACE 启动失败；
+# 它们都在 .gitignore 里，不会随仓库下发，部署时须自建。
 ReadWritePaths=/opt/codearts2api/auths /opt/codearts2api/data
 
 [Install]

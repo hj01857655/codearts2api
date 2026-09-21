@@ -180,17 +180,50 @@ export CA2A_API_KEY=$(openssl rand -hex 24)
 
 ## 部署（systemd / Docker）
 
-```bash
-sudo mkdir -p /opt/codearts2api && sudo cp -r bin config.example.json auths /opt/codearts2api/
-sudo cp deploy/codearts2api.service /etc/systemd/system/
-# 编辑 /opt/codearts2api/.env 写 CA2A_API_KEY，改好 config.json
-sudo systemctl daemon-reload && sudo systemctl enable --now codearts2api
+二进制按平台从 Release 下载（或本地 `make linux` 产出 `bin/`）：
 
-# 或 Docker
+```bash
+mkdir -p bin
+curl -fsSL https://github.com/hj01857655/codearts2api/releases/latest/download/codearts2api_linux_amd64.tar.gz \
+  | tar -xz -C bin/ codearts2api
+```
+
+### systemd
+
+```bash
+# 1. 目录、二进制与配置。auths/ 与 data/ 不在仓库里（.gitignore），必须自建：
+sudo mkdir -p /opt/codearts2api/{bin,auths,data}
+sudo cp bin/codearts2api /opt/codearts2api/bin/
+sudo cp config.example.json /opt/codearts2api/config.json
+sudo cp deploy/codearts2api.service /etc/systemd/system/
+
+# 2. 配置：写 api_key（或 .env 里的 CA2A_API_KEY），想让控制台能在线更新就填 update_repo
+sudo sh -c 'umask 077; printf "CA2A_API_KEY=%s\n" "$(openssl rand -hex 24)" > /opt/codearts2api/.env'
+sudo editor /opt/codearts2api/config.json   # api_key / update_repo
+
+# 3. 授权与权限：User=ubuntu 需能写 auths/、data/ 与 bin/（自更新要替换二进制）
+sudo chown -R ubuntu:ubuntu /opt/codearts2api
+sudo systemd-analyze verify /etc/systemd/system/codearts2api.service   # 可选：先查 unit
+sudo systemctl daemon-reload && sudo systemctl enable --now codearts2api
+```
+
+两个容易挡在首次启动前的细节：`auths/` 与 `data/` 必须先存在（unit 的
+`ReadWritePaths` 指向不存在的路径会让服务以 `226/NAMESPACE` 失败），`bin/` 必须
+属于运行用户（否则在线更新最后一步的 rename 会因权限失败）。
+
+非 Ubuntu 的机器记得把 unit 里的 `User=ubuntu` 改成实际用户。
+
+### Docker
+
+```bash
 export CA2A_API_KEY=你的随机密钥
 mkdir -p auths data
+cp config.example.json config.json
 docker compose up -d --build
 ```
+
+容器内不支持在线更新（会被下次 `up --build` 覆盖），升级改用
+`docker compose pull && docker compose up -d`。
 
 ## 环境变量配置
 
