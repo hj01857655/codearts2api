@@ -216,12 +216,11 @@ button.chip:hover{border-color:var(--accent);color:var(--ink)}
 .menu .who{padding:5px 10px 7px;font-size:11.5px;color:var(--ink-3);word-break:break-all}
 .menu button.danger{color:var(--bad)}
 .menu button.danger:hover:not(:disabled){background:var(--bad-soft);color:var(--bad)}
-@media (max-width:760px){.menu{right:auto;left:0}}
+/* 菜单一律右对齐：两个菜单的触发按钮都在顶栏右侧簇（.grow 把动作区推到右端），
+   窄屏下也如此。此前窄屏改成 left:0 会把 248px 宽的浮层从按钮左侧展开而右溢出视口。 */
+.menu{right:0;left:auto}
 
 /* ── 用户菜单（顶栏最右）────────────────────────────────────────── */
-/* 这一个菜单贴在右边缘，窄屏下若跟随上面媒体查询的 left:0 会向右溢出，
-   故显式压回右对齐（选择器权重高于媒体查询里的 .menu）。 */
-.menu-wrap.user .menu{right:0;left:auto}
 .uinfo{display:flex;align-items:center;gap:8px}
 .uinfo .uavatar{width:20px;height:20px;border-radius:50%;flex:none;display:grid;place-items:center;font-weight:700;font-size:11px;font-family:var(--mono);background:var(--accent);color:var(--accent-ink)}
 .uinfo .uavatar.off{background:var(--surface-2);color:var(--ink-3);border:1px solid var(--line)}
