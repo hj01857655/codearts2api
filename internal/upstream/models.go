@@ -782,9 +782,12 @@ func (c *Client) fetchBenefitModels(accountID string, cred SignCredential) ([]Mo
 	}
 	var out struct {
 		ErrorCode string `json:"error_code"`
-		Result    struct {
-			BaseURL string `json:"base_url"`
-			Models  []struct {
+		// base_url 上游会给（https://opengw.developer.huaweicloud.com/v2），但本项目
+		// 不按它路由：聊天走 snap-access 的 /api/v2/chat/completions + maas_type 头
+		// （client.go sendChatV2）。刻意不解它——解析了却没有消费点的字段，
+		// 会让人误以为我们真按这个地址请求。
+		Result struct {
+			Models []struct {
 				ModelID       string `json:"model_id"`
 				ModelName     string `json:"model_name"`
 				ModelDesc     string `json:"model_desc"`
