@@ -4,6 +4,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 )
@@ -124,6 +125,34 @@ func TestFetchAgentModelsPrefersModelIDOverMarketingName(t *testing.T) {
 	}
 	if len(infos2) != 1 || infos2[0].ID != "GLM-5.2" {
 		t.Fatalf("仅 model_name 时应回退取它，got=%+v", infos2)
+	}
+}
+
+// 拉 agent 列表时不能带 is_primary_agent=true 过滤（Python 版同样不带）：该过滤由
+// 上游执行，会把非主 agent 从列表里直接抹掉，而模型可能恰好挂在它们身上。
+func TestCandidateAgentIDsDoesNotFilterByPrimary(t *testing.T) {
+	var rawQuery string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		rawQuery = r.URL.RawQuery
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"agents":[{"agent_id":"sub","agent_name":"Sub"}]}`)
+	}))
+	defer srv.Close()
+
+	c := New(5 * time.Second)
+	c.snapBase = srv.URL
+	ids, err := c.candidateAgentIDs(SignCredential{AccessKeyID: "AK", SecretAccessKey: "SK"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(rawQuery, "is_primary_agent") {
+		t.Fatalf("不应带 is_primary_agent 过滤（会预先抹掉非主 agent），query=%q", rawQuery)
+	}
+	if !strings.Contains(rawQuery, "limit=100") {
+		t.Errorf("仍应带分页参数，query=%q", rawQuery)
+	}
+	if len(ids) != 1 || ids[0] != "sub" {
+		t.Fatalf("应返回非主 agent 作为候选，got=%v", ids)
 	}
 }
 

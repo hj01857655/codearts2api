@@ -433,8 +433,12 @@ func (c *Client) agentModelsByID(agentID string, cred SignCredential) ([]ModelIn
 // 顺序与官方客户端一致：agent_name=="CodeAgent" && alias.alias_zh_cn=="智能体"
 // && show_in_ide 优先，其次 is_primary_agent，最后列表其余；同档内保持上游顺序。
 // 调用方逐个试，直到某个 agent 真给出模型。
+//
+// 刻意不带 is_primary_agent=true 过滤（Python 版同样不带）：该过滤由上游执行，
+// 会把非主 agent 从列表里直接抹掉——而模型可能恰好挂在它们身上（实测已有多个
+// agent_id 各自带 models）。取全量再本地排序，只会看到更多，不会更少。
 func (c *Client) candidateAgentIDs(cred SignCredential) ([]string, error) {
-	raw, err := c.getSigned(context.Background(), c.snapURL(EpAgentList)+"?offset=0&limit=100&is_primary_agent=true", cred, true)
+	raw, err := c.getSigned(context.Background(), c.snapURL(EpAgentList)+"?offset=0&limit=100", cred, true)
 	if err != nil {
 		return nil, err
 	}
