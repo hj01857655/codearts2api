@@ -2,6 +2,7 @@
 package server
 
 import (
+	"context"
 	crand "crypto/rand"
 	"crypto/subtle"
 	"encoding/base64"
@@ -957,8 +958,11 @@ func (h *Handler) chatCompletions(w http.ResponseWriter, r *http.Request) {
 			rc.Close()
 			h.cfg.Pool.ReleaseLock(acct.Name) // 释放锁
 			if werr != nil {
-				log.Printf("chat stream account=%s error: %v", acct.Name, werr)
-				h.cfg.Pool.NoteError(acct.Name, h.cfg.ErrThreshold, h.cfg.ErrCooldown)
+				// 客户端断连（context canceled）不是账号问题，不计数。
+				if !errors.Is(werr, context.Canceled) && !strings.Contains(werr.Error(), "context canceled") {
+					log.Printf("chat stream account=%s error: %v", acct.Name, werr)
+					h.cfg.Pool.NoteError(acct.Name, h.cfg.ErrThreshold, h.cfg.ErrCooldown)
+				}
 			} else {
 				h.cfg.Pool.NoteSuccess(acct.Name)
 			}
@@ -970,7 +974,8 @@ func (h *Handler) chatCompletions(w http.ResponseWriter, r *http.Request) {
 		h.cfg.Pool.ReleaseLock(acct.Name) // 释放锁
 		if aerr != nil {
 			lastErr = aerr
-			h.cfg.Pool.Cooldown(acct.Name, pool.CoolErr, h.cfg.ErrCooldown, aerr.Error())
+			// 聚合错误用 NoteError 而非立即冷却：可能是上游瞬时返回了异常格式。
+			h.cfg.Pool.NoteError(acct.Name, h.cfg.ErrThreshold, h.cfg.ErrCooldown)
 			continue
 		}
 
@@ -1170,9 +1175,12 @@ func (h *Handler) handleUpstreamError(acct *pool.Account, model string, err erro
 			// 不冷却账号——池的并发锁已防止过载，冷却反而误伤后续请求。
 			log.Printf("upstream concurrent limit (transient) account=%s msg=%s", acct.Name, truncateMsg(ae.Message, 80))
 		case ae.Status >= 500:
-			h.cfg.Pool.Cooldown(acct.Name, pool.CoolErr, h.cfg.ErrCooldown, ae.Error())
-		default:
+			// 5xx 可能是上游瞬时故障（重启/过载）：用 NoteError 而非立即冷却，
+			// 连续 3 次才进冷却，单次 502 不会冻住账号 10 分钟。
 			h.cfg.Pool.NoteError(acct.Name, h.cfg.ErrThreshold, h.cfg.ErrCooldown)
+		default:
+			// 其余 4xx 是客户端错误（请求格式/参数问题），不是账号健康问题，不冷却。
+			log.Printf("upstream 4xx (client-side) account=%s status=%d msg=%s", acct.Name, ae.Status, truncateMsg(ae.Message, 80))
 		}
 		return false
 	}
