@@ -207,7 +207,8 @@ go func() {
 | 3. 面板与文档 | 设置菜单入口 + 操作记录 + README | 已完成：设置菜单「版本」分组含检测更新/立即更新/回滚/重启 |
 
 发版流程：打一个 `v*` tag 即触发 workflow 跑测试并发 Release；本地自测用
-`make linux`（版本取自 `git describe`）。
+`make linux`（版本取自 `git describe`）。首个 Release `v0.1.0` 已按此流程发布成功
+（workflow run 35584893591 的 `release` job 52s 通过）。
 
 ## 9. 验收与测试要点
 
@@ -223,8 +224,8 @@ go func() {
 1. 是否需要给下载请求加自定义 UA（部分网络对 GitHub 有拦截）。
 2. 是否要给更新请求支持代理配置，以及代理凭据的存放方式。
 3. 面板要不要显示 Release 的更新说明全文，还是只显示版本号与链接。
-4. 尚未验证「真机点按钮完成一次真实更新」——需要仓库先有第一个 Release，
-   以及一个 Linux + systemd 的部署实例（容器内按设计拒绝自更新）。
+4. 尚未验证「真机点按钮完成一次真实更新」——首个 Release（`v0.1.0`）已就位，
+   剩下的前提是一个 Linux + systemd 的部署实例（容器内按设计拒绝自更新）。
 
 ## 附：本文核对过的来源
 
@@ -236,6 +237,7 @@ go func() {
 - `Wei-Shaw/sub2api`：`backend/internal/service/update_service.go`（imports 与替换顺序）、
   `backend/internal/pkg/sysutil/restart.go`（`os.Exit(0)` 方案）、`.goreleaser.yaml`（ldflags 与
   checksums）、`deploy/install.sh`（从 releases/latest 下载并校验）。
-- 仓库当前无 tag / Release / workflow（已核对）。
+- 仓库发布状态：首个 Release `v0.1.0`（2026-09-21，`hj01857655/codearts2api`），
+  asset 为 `codearts2api_linux_{amd64,arm64}.tar.gz` + `checksums.txt`，非 draft、非 prerelease。
 
 参考实现地址：https://github.com/Wei-Shaw/sub2api
