@@ -721,31 +721,43 @@ function renderBenefit(){
     $("benefitNote").textContent = state.benefit ? "无数据" : "未查询";
     return;
   }
-  let totalSum = 0, remainSum = 0;
+  let totalSum = 0, usedSum = 0, remainSum = 0, counted = 0;
   body.innerHTML = results.map(r => {
+    // has_balance 区分「余额就是 0」与「余额没查到」：后者必须显示占位符，
+    // 否则 0 会被当成真实额度读，还会被折进合计行。
+    const has = !!r.has_balance;
     const total = Number(r.total || 0), used = Number(r.used || 0), remain = Number(r.remain || 0);
-    totalSum += total; remainSum += remain;
-    const pct = total > 0 ? Math.round(remain / total * 100) : 0;
-    const color = pct > 50 ? "var(--ok)" : (pct > 20 ? "var(--warn)" : "var(--bad)");
-    const last = r.create_time ? fmtTime(new Date(r.create_time).toISOString()) : "从未领取";
+    if (has){ totalSum += total; usedSum += used; remainSum += remain; counted++; }
+    const pct = has && total > 0 ? Math.round(remain / total * 100) : 0;
+    const color = !has ? "var(--ink-3)" : (pct > 50 ? "var(--ok)" : (pct > 20 ? "var(--warn)" : "var(--bad)"));
+    // 领取状态查询失败时 create_time 同样是 0，与「从未领取」不是一回事。
+    const last = !r.ok ? '<span class="muted">查询失败</span>'
+      : (r.create_time ? escapeHtml(fmtTime(new Date(r.create_time).toISOString())) : "从未领取");
     const note = r.message ? '<div class="muted" style="font-size:11.5px">' + escapeHtml(r.message) + '</div>' : "";
-    return '<tr' + (r.ok ? '' : ' class="cool"') + '>' +
+    const dash = '<span class="muted">—</span>';
+    return '<tr' + (r.ok ? '' : ' class="off"') + '>' +
       '<td class="mark" aria-hidden="true"><i></i></td>' +
       '<td class="who"><div class="nm">' + escapeHtml(nameOf(r.uid)) + '</div>' +
         '<div class="id" title="' + escapeHtml(r.uid) + '">' + escapeHtml(r.uid) + '</div>' + note + '</td>' +
-      '<td class="num">' + escapeHtml(last) + '</td>' +
-      '<td class="num">' + total.toLocaleString() + '</td>' +
-      '<td class="num muted">' + used.toLocaleString() + '</td>' +
-      '<td class="num" style="color:' + color + '">' + remain.toLocaleString() + '</td>' +
-      '<td><div class="bar"><i style="width:' + pct + '%;background:' + color + '"></i></div>' +
-        '<span class="num muted" style="font-size:11px">' + pct + '%</span></td></tr>';
+      '<td class="num">' + last + '</td>' +
+      '<td class="num">' + (has ? total.toLocaleString() : dash) + '</td>' +
+      '<td class="num muted">' + (has ? used.toLocaleString() : dash) + '</td>' +
+      '<td class="num" style="color:' + color + '">' + (has ? remain.toLocaleString() : dash) + '</td>' +
+      '<td>' + (has
+        ? '<div class="bar"><i style="width:' + pct + '%;background:' + color + '"></i></div>' +
+          '<span class="num muted" style="font-size:11px">' + pct + '%</span>'
+        : dash) + '</td></tr>';
   }).join("");
-  $("benefitNote").textContent = results.length + " 个账号";
+  // 合计只统计拿得到余额的账号，并明示统计范围——把没查到的当 0 加进去会凭空缩小总数。
+  $("benefitNote").textContent = counted === results.length
+    ? results.length + " 个账号"
+    : counted + " / " + results.length + " 个账号有余额";
   // 合计行与各列对齐：总额度/已用/剩余/剩余占比，放在 tfoot 而非 header 文字，多账号时一目了然。
-  const usedSum = totalSum - remainSum;
   const totPct = totalSum > 0 ? Math.round(remainSum / totalSum * 100) : 0;
-  const totColor = totPct > 50 ? "var(--ok)" : (totPct > 20 ? "var(--warn)" : "var(--bad)");
+  const totColor = !counted ? "var(--ink-3)" : (totPct > 50 ? "var(--ok)" : (totPct > 20 ? "var(--warn)" : "var(--bad)"));
   const foot = $("benefitFoot");
+  // 一个余额都没查到时不显示合计：全 0 的合计行会被读成「额度已用尽」。
+  if (counted === 0){ foot.hidden = true; foot.innerHTML = ""; return; }
   foot.hidden = false;
   foot.innerHTML = '<tr>' +
     '<td class="mark"></td>' +
@@ -820,6 +832,9 @@ async function loadOverview(){
 }
 
 async function loadBenefit(silent){
+  // 手动刷新期间禁用：多账号时这里每账号两次上游请求，重复点会叠请求。
+  const btn = $("btnBenefitRefresh");
+  if (!silent){ btn.disabled = true; btn.textContent = "查询中…"; }
   try {
     const data = await api("/admin/api/benefit/status");
     state.benefit = data;
@@ -830,6 +845,8 @@ async function loadBenefit(silent){
     toast(e.message, false);
     logLine("err", "福利额度查询 · " + e.message);
     if (e.status === 401) showLogin("密钥不正确，请重试。");
+  } finally {
+    if (!silent){ btn.disabled = false; btn.textContent = "刷新额度"; }
   }
 }
 
@@ -1050,10 +1067,17 @@ $("btnModels").onclick = async () => {
 $("btnSchedRefresh").onclick = () => $("btnRefresh").click();
 $("btnBenefitRefresh").onclick = () => loadBenefit(false);
 $("btnCheckinAll").onclick = async () => {
-  const d = await action("/admin/api/checkin", {}, "全部领取福利");
-  if (d && d.results){
-    state.benefit = { results: d.results };
-    renderBenefit();
+  // 领取是对账号的写操作且逐账号串行打上游，防重复点击。
+  const btn = $("btnCheckinAll");
+  btn.disabled = true;
+  try {
+    const d = await action("/admin/api/checkin", {}, "全部领取福利");
+    if (d && d.results){
+      state.benefit = { results: d.results };
+      renderBenefit();
+    }
+  } finally {
+    btn.disabled = false;
   }
 };
 

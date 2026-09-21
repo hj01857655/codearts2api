@@ -121,6 +121,9 @@ type benefitResult struct {
 	Total      int64  `json:"total,omitempty"`       // 总额度
 	Remain     int64  `json:"remain,omitempty"`      // 剩余
 	Used       int64  `json:"used,omitempty"`        // 已用
+	// HasBalance 标记 Total/Remain/Used 是上游真实返回的。没有它就无法区分
+	// 「余额就是 0」与「余额没查到」，面板会把后者当 0 显示并计入合计。
+	HasBalance bool `json:"has_balance"`
 }
 
 // adminCheckin 真正领取限时福利（POST /api/v1/benefit/claim）并返回余额。
@@ -149,17 +152,18 @@ func (h *Handler) adminCheckin(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		// 再查余额
-		total, remain, used, berr := h.cfg.Upstream.BenefitBalance(cred)
-		if berr != nil {
-			res.OK = true
-			res.Message = "claimed, balance: " + berr.Error()
-		} else {
-			res.OK = true
-			res.Message = "claimed"
-			res.Total = total
-			res.Remain = remain
-			res.Used = used
-		}
+			total, remain, used, berr := h.cfg.Upstream.BenefitBalance(cred)
+			if berr != nil {
+				res.OK = true
+				res.Message = "claimed, balance: " + berr.Error()
+			} else {
+				res.OK = true
+				res.Message = "claimed"
+				res.Total = total
+				res.Remain = remain
+				res.Used = used
+				res.HasBalance = true
+			}
 		results = append(results, res)
 	}
 	okCount := 0
@@ -198,13 +202,24 @@ func (h *Handler) adminBenefitStatus(w http.ResponseWriter, r *http.Request) {
 		// 余额
 		total, remain, used, berr := h.cfg.Upstream.BenefitBalance(cred)
 		if berr == nil {
-			res.Total = total
-			res.Remain = remain
-			res.Used = used
+			res.Total, res.Remain, res.Used = total, remain, used
+			res.HasBalance = true
+		} else {
+			// 余额失败原先完全静默：面板把 0 当成真实额度显示，还折进合计行。
+			res.Message = appendMsg(res.Message, "balance: "+berr.Error())
 		}
 		results = append(results, res)
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"results": results})
+}
+
+// appendMsg 拼接同一账号的多条失败原因：状态查询与余额查询可能各自失败，
+// 只留最后一条会丢掉先发生的那个。
+func appendMsg(existing, add string) string {
+	if existing == "" {
+		return add
+	}
+	return existing + "; " + add
 }
 
 // toActionResults 把 benefitResult 转成 actionResult 供 summaryMsg 复用。
