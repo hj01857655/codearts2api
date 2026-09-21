@@ -1,6 +1,7 @@
 auths/
 data/
 bin/
+dist/
 config.json
 .env
 *.key

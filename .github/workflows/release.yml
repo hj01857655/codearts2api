@@ -1,10 +1,11 @@
 name: release
 
+# 只由 tag 触发：手动触发没有 GORELEASER_CURRENT_TAG 可用，
+# 从分支跑会因为找不到 tag 失败，从已有 tag 跑会撞 asset 已存在。
 on:
   push:
     tags:
       - "v*"
-  workflow_dispatch:
 
 permissions:
   contents: write
@@ -27,7 +28,8 @@ jobs:
       - name: Release
         uses: goreleaser/goreleaser-action@v6
         with:
-          version: latest
+          # 固定大版本：.goreleaser.yaml 用的是 v2 语法，latest 会浮到任意新大版本。
+          version: "~> v2"
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
