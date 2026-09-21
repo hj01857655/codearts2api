@@ -950,7 +950,11 @@ func (h *Handler) chatCompletions(w http.ResponseWriter, r *http.Request) {
 			h.saveChats()
 		}
 		if req.Stream {
-			werr := upstream.StreamCapture(w, rc, model, func(comp *upstream.RawCompletion) {
+			werr := upstream.StreamCapture(w, rc, model, upstream.StreamOptions{
+				IncludeUsage: req.IncludeUsage,
+				// 上游整段没给 usage 时用长度估算兜底（非精确值）。
+				EstimateUsage: func(c *upstream.RawCompletion) map[string]int { return usageEstimate(msgs, c) },
+			}, func(comp *upstream.RawCompletion) {
 				storeChat()
 				// 流式传输中定期保活
 				h.cfg.Pool.PingKeepalive(acct.Name)
@@ -998,7 +1002,7 @@ func (h *Handler) chatCompletions(w http.ResponseWriter, r *http.Request) {
 		storeChat()
 		h.cfg.Pool.NoteSuccess(acct.Name)
 
-		writeJSON(w, http.StatusOK, buildCompletion(model, comp.Reasoning, content, calls, finish, chatID, usageEstimate(msgs, comp)))
+		writeJSON(w, http.StatusOK, buildCompletion(model, comp.Reasoning, content, calls, finish, chatID, completionUsage(msgs, comp)))
 		return
 	}
 	msg := "all accounts unavailable (disabled/cooldown)"
@@ -1105,6 +1109,19 @@ func fromUpstreamToolCalls(calls []upstream.ChatToolCall) []openAIToolCall {
 	return out
 }
 
+// completionUsage 优先透传上游原生 usage（含 completion_tokens_details 等扩展
+// 字段），上游未提供时回退到长度估算（估算值不是精确 token 计数）。
+func completionUsage(msgs []upstream.ChatMessage, comp *upstream.RawCompletion) map[string]any {
+	if len(comp.Usage) > 0 {
+		return comp.Usage
+	}
+	out := make(map[string]any, 3)
+	for k, v := range usageEstimate(msgs, comp) {
+		out[k] = v
+	}
+	return out
+}
+
 func usageEstimate(msgs []upstream.ChatMessage, comp *upstream.RawCompletion) map[string]int {
 	var pt int
 	for _, m := range msgs {
@@ -1121,7 +1138,7 @@ func usageEstimate(msgs []upstream.ChatMessage, comp *upstream.RawCompletion) ma
 }
 
 // buildCompletion 组装非流式响应。
-func buildCompletion(model, reasoning, content string, calls []openAIToolCall, finish, chatID string, usage map[string]int) map[string]any {
+func buildCompletion(model, reasoning, content string, calls []openAIToolCall, finish, chatID string, usage map[string]any) map[string]any {
 	message := map[string]any{"role": "assistant"}
 	if len(calls) > 0 {
 		message["tool_calls"] = toOpenAIToolCalls(calls)

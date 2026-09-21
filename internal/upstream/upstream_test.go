@@ -102,7 +102,7 @@ func TestStreamCodeArts(t *testing.T) {
 		"event: done\ndata: {\"error_code\":\"0\"}\n\n"
 	rec := httptest.NewRecorder()
 	var captured *RawCompletion
-	err := StreamCapture(rec, bytes.NewBufferString(stream), "m", func(rc *RawCompletion) {
+	err := StreamCapture(rec, bytes.NewBufferString(stream), "m", StreamOptions{}, func(rc *RawCompletion) {
 		captured = rc
 	})
 	if err != nil {
@@ -114,6 +114,106 @@ func TestStreamCodeArts(t *testing.T) {
 	if !strings.Contains(rec.Body.String(), `"content":"hi"`) || !strings.Contains(rec.Body.String(), "[DONE]") {
 		t.Fatalf("body=%s", rec.Body.String())
 	}
+}
+
+func TestStreamIncludeUsage(t *testing.T) {
+	const usageFrame = "data: {\"choices\":[],\"usage\":{\"prompt_tokens\":10,\"completion_tokens\":20,\"total_tokens\":30,\"completion_tokens_details\":{\"reasoning_tokens\":8}}}\n\n"
+	const answer = "data: {\"choices\":[{\"delta\":{\"content\":\"OK\"},\"finish_reason\":\"stop\"}]}\n\n"
+
+	// 1) 原生 usage 优先：终帧必须原样透传原生 usage，不采用估算值。
+	rec := httptest.NewRecorder()
+	err := StreamCapture(rec, bytes.NewBufferString(answer+usageFrame+"data: [DONE]\n\n"), "m", StreamOptions{
+		IncludeUsage:  true,
+		EstimateUsage: func(*RawCompletion) map[string]int { return map[string]int{"prompt_tokens": 1, "completion_tokens": 2, "total_tokens": 3} },
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := rec.Body.String()
+	usageChunks, terminal := streamChunks(t, body)
+	if terminal == nil {
+		t.Fatalf("no terminal usage chunk in %s", body)
+	}
+	if len(usageChunks) != 1 {
+		t.Fatalf("want exactly 1 usage chunk, got %d: %s", len(usageChunks), body)
+	}
+	if choices, ok := terminal["choices"].([]any); !ok || len(choices) != 0 {
+		t.Fatalf("terminal usage chunk must have empty choices: %#v", terminal)
+	}
+	if details, ok := terminal["usage"].(map[string]any)["completion_tokens_details"].(map[string]any); !ok || details["reasoning_tokens"] != float64(8) {
+		t.Fatalf("native usage must be passed through verbatim: %#v", terminal["usage"])
+	}
+	// 增量帧带 usage: null（OpenAI 同行为）；只有 choices 为空的终帧能带真值。
+	for _, c := range streamChunksRaw(t, body) {
+		choices, ok := c["choices"].([]any)
+		if !ok || len(choices) == 0 {
+			continue
+		}
+		if _, hasUsage := c["usage"]; hasUsage && c["usage"] != nil {
+			t.Fatalf("delta chunk must carry null usage, got %#v", c["usage"])
+		}
+	}
+
+	// 2) 上游没给 usage：回退到估算值，且提示词长度参与计算。
+	rec2 := httptest.NewRecorder()
+	err = StreamCapture(rec2, bytes.NewBufferString(answer+"data: [DONE]\n\n"), "m", StreamOptions{
+		IncludeUsage:  true,
+		EstimateUsage: func(*RawCompletion) map[string]int { return map[string]int{"prompt_tokens": 7, "completion_tokens": 3, "total_tokens": 10} },
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, terminal2 := streamChunks(t, rec2.Body.String())
+	if terminal2 == nil || terminal2["usage"].(map[string]any)["total_tokens"] != float64(10) {
+		t.Fatalf("want estimated usage fallback, got %#v", terminal2)
+	}
+
+	// 3) 未开启 include_usage：不得出现任何 usage 字段（含 null）。
+	rec3 := httptest.NewRecorder()
+	err = StreamCapture(rec3, bytes.NewBufferString(answer+usageFrame+"data: [DONE]\n\n"), "m", StreamOptions{}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(rec3.Body.String(), "\"usage\"") {
+		t.Fatalf("usage must be absent when include_usage is off: %s", rec3.Body.String())
+	}
+}
+
+// streamChunks 解析 SSE 正文，返回所有 usage 帧（choices 为空）与其中最后一帧。
+func streamChunks(t *testing.T, body string) ([]map[string]any, map[string]any) {
+	t.Helper()
+	var usage []map[string]any
+	for _, c := range streamChunksRaw(t, body) {
+		if u, ok := c["usage"].(map[string]any); ok {
+			usage = append(usage, c)
+			_ = u
+		}
+	}
+	if len(usage) == 0 {
+		return nil, nil
+	}
+	return usage, usage[len(usage)-1]
+}
+
+// streamChunksRaw 解析 SSE 正文，返回所有 data 帧（跳过 [DONE] 与 error 事件）。
+func streamChunksRaw(t *testing.T, body string) []map[string]any {
+	t.Helper()
+	var out []map[string]any
+	for _, event := range strings.Split(strings.TrimSpace(body), "\n\n") {
+		if !strings.HasPrefix(event, "data: ") {
+			continue
+		}
+		payload := strings.TrimPrefix(event, "data: ")
+		if payload == "[DONE]" {
+			continue
+		}
+		var chunk map[string]any
+		if err := json.Unmarshal([]byte(payload), &chunk); err != nil {
+			t.Fatalf("bad chunk %q: %v", payload, err)
+		}
+		out = append(out, chunk)
+	}
+	return out
 }
 
 func TestAggregateStructuredQA(t *testing.T) {

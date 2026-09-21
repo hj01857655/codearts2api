@@ -1,263 +1,503 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="zh-CN" data-theme="graphite">
 <head>
-<meta charset="UTF-8"/>
-<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>__SERVICE_TITLE__ · 控制台</title>
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Fira+Sans:wght@300;400;500;600;700&family=Fira+Code:wght@400;500;600;700&display=swap');
-:root{
-  --bg:#EEF2F8; --bg2:#E4EAF4; --card:rgba(255,255,255,.66); --card2:rgba(255,255,255,.88);
-  --line:rgba(100,116,139,.42); --text:#1E293B; --muted:#55657E; --accent:__ACCENT__;
-  --ok:#16a34a; --warn:#d97706; --bad:#dc2626; --info:#0284c7;
-  --radius:16px; --radius-sm:10px;
-  --shadow:0 8px 24px rgba(30,41,59,.08), inset 0 1px 0 rgba(255,255,255,.95);
-  --shadow-lg:0 16px 40px rgba(30,41,59,.14), inset 0 1px 0 rgba(255,255,255,.95);
-  --blur:14px;
-  --font-sans:'Fira Sans',ui-sans-serif,system-ui,-apple-system,'Segoe UI',Roboto,'PingFang SC','Microsoft YaHei',sans-serif;
-  --font-mono:'Fira Code',ui-monospace,SFMono-Regular,Menlo,Consolas,'Courier New',monospace;
+/* ── 设计令牌：四套独立色板 ───────────────────────────────────────────
+   冷石墨基调（仪表盘语言，非营销页）：底色分层 + 单一强调色（仅交互），
+   语义色只给状态。等宽数字承载所有观测值，tabular-nums 对齐。
+   graphite/midnight 为深色，light/sand 为浅色，各自给全量变量。
+   强调色由后端注入（--brand），面板不写死色值；必须拆成两个令牌，
+   否则两头必有一头不达标：
+     --accent     填充（按钮底色/进度条/描边），承担白字对比度
+     --accent-fg  落在面板底色上的文字与图标（导航选中项/回调链接），
+                  方向相反——深色下提亮、浅色下压暗，各自过 AA
+   所有小号灰字（--ink-3）与语义色均按 4.5:1 取值，换色时用同法复核。 */
+:root{ --brand:__ACCENT__;
+  --mono:ui-monospace,"Cascadia Mono","SF Mono",Consolas,monospace;
+  --sans:system-ui,-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
 }
-*{box-sizing:border-box}
-html,body{margin:0;min-height:100%;color:var(--text);font:14px/1.55 var(--font-sans);-webkit-font-smoothing:antialiased;
-  background:
-    radial-gradient(900px 480px at 8% -8%, rgba(191,219,254,.55), transparent),
-    radial-gradient(820px 440px at 96% 2%, rgba(221,214,254,.5), transparent),
-    radial-gradient(760px 420px at 55% 112%, rgba(165,243,252,.42), transparent),
-    linear-gradient(180deg,#F6F8FC,#ECF1F8)}
-a{color:color-mix(in srgb,var(--accent) 78%,#0F172A);text-decoration:none}
-button{font:inherit;cursor:pointer}
-button:focus-visible,input:focus-visible,a:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:8px}
-input{font:inherit}
-::selection{background:color-mix(in srgb,var(--accent) 28%,transparent)}
-::-webkit-scrollbar{width:9px;height:9px}
-::-webkit-scrollbar-thumb{background:rgba(100,116,139,.35);border-radius:99px}
-::-webkit-scrollbar-thumb:hover{background:color-mix(in srgb,var(--accent) 45%,rgba(100,116,139,.4))}
-::-webkit-scrollbar-track{background:transparent}
-.wrap{max-width:1180px;margin:0 auto;padding:26px 18px 52px}
-.top{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:22px}
-.brand{display:flex;align-items:center;gap:13px}
-.logo{width:42px;height:42px;border-radius:14px;background:linear-gradient(135deg,var(--accent),color-mix(in srgb,var(--accent) 55%,#fff));display:grid;place-items:center;font-weight:800;color:#fff;box-shadow:var(--shadow);font-family:var(--font-mono);letter-spacing:-.5px}
-.brand h1{margin:0;font-size:20px;letter-spacing:.2px;font-weight:600;color:#0F172A}
-.brand p{margin:2px 0 0;color:var(--muted);font-size:12px}
-.actions{display:flex;gap:8px;flex-wrap:wrap}
-.btn{border:1px solid var(--line);background:rgba(255,255,255,.75);color:#334155;padding:8px 13px;border-radius:var(--radius-sm);cursor:pointer;transition:border-color .18s,background .18s,transform .12s,box-shadow .18s;box-shadow:0 2px 8px rgba(30,41,59,.05)}
-.btn:hover{border-color:color-mix(in srgb,var(--accent) 55%,var(--line));background:#fff;transform:translateY(-1px);box-shadow:var(--shadow)}
-.btn:active{transform:translateY(0)}
-.btn:disabled{opacity:.5;cursor:not-allowed;transform:none}
-.btn.primary{background:linear-gradient(135deg,var(--accent),color-mix(in srgb,var(--accent) 78%,#fff));border-color:transparent;color:#fff;font-weight:700;box-shadow:0 4px 16px color-mix(in srgb,var(--accent) 32%,transparent)}
-.btn.primary:hover{filter:brightness(1.05);box-shadow:0 6px 20px color-mix(in srgb,var(--accent) 42%,transparent)}
-.btn.ghost{background:transparent;box-shadow:none}
-.btn.danger{border-color:color-mix(in srgb,var(--bad) 45%,var(--line));color:#b91c1c}
-.btn.danger:hover{background:color-mix(in srgb,var(--bad) 8%,#fff);border-color:var(--bad)}
-.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:18px}
-@media (max-width:900px){.grid{grid-template-columns:repeat(2,1fr)}}
-@media (max-width:520px){.grid{grid-template-columns:1fr}}
-.stat{position:relative;overflow:hidden;background:var(--card);border:1px solid rgba(255,255,255,.8);border-radius:var(--radius);padding:15px 16px 13px;box-shadow:var(--shadow);backdrop-filter:blur(var(--blur));-webkit-backdrop-filter:blur(var(--blur))}
-.stat::before{content:"";position:absolute;inset:0 auto 0 0;width:4px;background:linear-gradient(180deg,var(--accent),transparent);border-radius:4px}
-.stat .k{color:var(--muted);font-size:12px;font-weight:600}
-.stat .v{font-size:27px;font-weight:700;margin-top:5px;letter-spacing:-.5px;font-variant-numeric:tabular-nums;line-height:1.1;color:#0F172A}
-.card{background:var(--card);border:1px solid rgba(255,255,255,.85);border-radius:var(--radius);box-shadow:var(--shadow);overflow:hidden;margin-bottom:16px;backdrop-filter:blur(var(--blur));-webkit-backdrop-filter:blur(var(--blur))}
-.card-h{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:14px 16px;border-bottom:1px solid var(--line);background:rgba(255,255,255,.35)}
-.card-h h2{margin:0;font-size:15px;font-weight:600;color:#0F172A}
-.card-b{padding:12px 16px}
-.table{width:100%;border-collapse:collapse}
-.table th,.table td{padding:11px 8px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
-.table th{color:var(--muted);font-size:11px;font-weight:700;letter-spacing:.4px;text-transform:uppercase}
-.table tr:last-child td{border-bottom:none}
-.table tbody tr{transition:background .15s}
-.table tbody tr:hover td{background:rgba(255,255,255,.5)}
-.table td strong{font-variant-numeric:tabular-nums}
-.badge{display:inline-flex;align-items:center;gap:6px;padding:3px 9px;border-radius:999px;font-size:11px;font-weight:700;border:1px solid transparent}
-.badge::before{content:"";width:6px;height:6px;border-radius:50%;background:currentColor}
-.badge.ok{background:rgba(22,163,74,.12);color:#15803d;border-color:rgba(22,163,74,.3)}
-.badge.warn{background:rgba(217,119,6,.12);color:#b45309;border-color:rgba(217,119,6,.3)}
-.badge.bad{background:rgba(220,38,38,.1);color:#b91c1c;border-color:rgba(220,38,38,.28)}
-.badge.info{background:rgba(2,132,199,.1);color:#0369a1;border-color:rgba(2,132,199,.28)}
-.mono{font-family:var(--font-mono);font-size:12px}
-.muted{color:var(--muted)}
-.row-actions{display:flex;gap:6px;flex-wrap:wrap}
-.toast{position:fixed;right:16px;bottom:16px;max-width:420px;background:rgba(255,255,255,.92);border:1px solid rgba(255,255,255,.9);color:var(--text);padding:12px 15px;border-radius:var(--radius-sm);box-shadow:var(--shadow-lg);opacity:0;transform:translateY(8px);transition:.22s;z-index:50;pointer-events:none;font-size:13px;backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px)}
-.toast.show{opacity:1;transform:none}
-.login{min-height:100vh;display:grid;place-items:center;padding:24px}
-.login-box{width:min(420px,100%);background:var(--card2);border:1px solid rgba(255,255,255,.9);border-radius:20px;padding:30px;box-shadow:var(--shadow-lg);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px)}
-.login-box h1{margin:0 0 6px;font-size:22px;color:#0F172A}
-.login-box p{margin:0 0 18px;color:var(--muted)}
-.field{display:flex;flex-direction:column;gap:6px;margin-bottom:14px}
-.field label{font-size:12px;color:var(--muted);font-weight:600}
-.field input{background:rgba(255,255,255,.85);border:1px solid var(--line);border-radius:var(--radius-sm);padding:11px 12px;color:var(--text);outline:none;transition:border-color .15s,box-shadow .15s}
-.field input:focus{border-color:var(--accent);box-shadow:0 0 0 2px color-mix(in srgb,var(--accent) 20%,transparent)}
+/* 默认板兼作 JS 未执行时的回退（:root 与 graphite 同规则） */
+:root,[data-theme="graphite"]{
+  --bg:#0c0e14; --surface:#14171f; --surface-2:#1a1e28; --raise:#202531;
+  --line:#262c3a; --line-soft:#1e232e;
+  --ink:#e8ebf2; --ink-2:#a8b0c2; --ink-3:#8b93a5; --accent-ink:#fff;
+  --accent:color-mix(in srgb, var(--brand) 92%, #000);
+  --accent-fg:color-mix(in srgb, var(--brand) 42%, #fff);
+  --accent-soft:color-mix(in srgb, var(--accent) 22%, transparent);
+  --ok:#3ddc97; --ok-soft:color-mix(in srgb, var(--ok) 15%, transparent);
+  --warn:#f5b544; --warn-soft:color-mix(in srgb, var(--warn) 15%, transparent);
+  --bad:#f0655f; --bad-soft:color-mix(in srgb, var(--bad) 15%, transparent);
+  --shadow:0 1px 2px rgba(0,0,0,.4), 0 8px 24px -12px rgba(0,0,0,.5);
+}
+[data-theme="midnight"]{
+  --bg:#080b16; --surface:#101524; --surface-2:#161d30; --raise:#1c2440;
+  --line:#232c44; --line-soft:#1b2337;
+  --ink:#e6eaf6; --ink-2:#a6b0c8; --ink-3:#8892ad; --accent-ink:#fff;
+  --accent:color-mix(in srgb, var(--brand) 90%, #000);
+  --accent-fg:color-mix(in srgb, var(--brand) 38%, #fff);
+  --accent-soft:color-mix(in srgb, var(--accent) 24%, transparent);
+  --ok:#3fd8a0; --ok-soft:color-mix(in srgb, var(--ok) 15%, transparent);
+  --warn:#f2b352; --warn-soft:color-mix(in srgb, var(--warn) 15%, transparent);
+  --bad:#ef6a70; --bad-soft:color-mix(in srgb, var(--bad) 15%, transparent);
+  --shadow:0 1px 2px rgba(0,0,0,.45), 0 10px 28px -14px rgba(0,0,0,.6);
+}
+[data-theme="light"]{
+  --bg:#f4f5f8; --surface:#fff; --surface-2:#f8f9fb; --raise:#fff;
+  --line:#e2e5ec; --line-soft:#eceef3;
+  --ink:#14171f; --ink-2:#545c6e; --ink-3:#666e80;
+  --accent:color-mix(in srgb, var(--brand) 86%, #000);
+  --accent-fg:color-mix(in srgb, var(--brand) 82%, #0b1020);
+  --accent-soft:color-mix(in srgb, var(--accent) 15%, transparent);
+  --ok:#0a7c4d; --warn:#8f5c07; --bad:#bf322b;
+  --ok-soft:color-mix(in srgb, var(--ok) 10%, transparent);
+  --warn-soft:color-mix(in srgb, var(--warn) 11%, transparent);
+  --bad-soft:color-mix(in srgb, var(--bad) 10%, transparent);
+  --shadow:0 1px 2px rgba(16,20,32,.06), 0 8px 24px -14px rgba(16,20,32,.14);
+}
+[data-theme="sand"]{
+  --bg:#f6f3ee; --surface:#fffdfa; --surface-2:#f7f3ec; --raise:#fffdfa;
+  --line:#e7e0d5; --line-soft:#efe9e0;
+  --ink:#221d17; --ink-2:#5b5248; --ink-3:#6e6459; --accent-ink:#fff;
+  --accent:color-mix(in srgb, var(--brand) 84%, #000);
+  --accent-fg:color-mix(in srgb, var(--brand) 80%, #1a1206);
+  --accent-soft:color-mix(in srgb, var(--accent) 14%, transparent);
+  --ok:#0a7a4d; --warn:#8a5a06; --bad:#bf3226;
+  --ok-soft:color-mix(in srgb, var(--ok) 10%, transparent);
+  --warn-soft:color-mix(in srgb, var(--warn) 11%, transparent);
+  --bad-soft:color-mix(in srgb, var(--bad) 10%, transparent);
+  --shadow:0 1px 2px rgba(40,30,16,.07), 0 8px 24px -14px rgba(40,30,16,.16);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+[hidden],.hidden{display:none!important}
+html,body{height:100%}
+body{background:var(--bg);color:var(--ink);font:14px/1.55 var(--sans);-webkit-font-smoothing:antialiased}
+::selection{background:var(--accent-soft)}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:4px}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+
+/* ── 壳层：左侧导航 + 主区 ─────────────────────────────────────────── */
+.shell{display:grid;grid-template-columns:208px 1fr;min-height:100vh}
+.nav{background:var(--surface);border-right:1px solid var(--line);display:flex;flex-direction:column;position:sticky;top:0;height:100vh}
+.brand{padding:20px 18px 16px;border-bottom:1px solid var(--line-soft)}
+.brand .name{font-weight:650;letter-spacing:-.01em;font-size:15px}
+.brand .sub{color:var(--ink-3);font-size:11.5px;font-family:var(--mono);margin-top:3px}
+.nav ul{list-style:none;padding:10px 8px;flex:1}
+.nav a{display:flex;align-items:center;gap:10px;padding:8px 11px;margin-bottom:2px;color:var(--ink-2);text-decoration:none;border-radius:7px;font-size:13.5px}
+.nav a:hover{background:var(--surface-2);color:var(--ink)}
+.nav a.on{background:var(--accent-soft);color:var(--accent-fg);font-weight:550}
+.nav a svg{width:15px;height:15px;flex:none;opacity:.85}
+.nav .sig{padding:12px 16px;border-top:1px solid var(--line-soft);font-size:11.5px;color:var(--ink-3)}
+.nav .sig .row{display:flex;align-items:center;gap:7px}
+.nav .sig .mono{font-family:var(--mono)}
+
+.main{min-width:0;display:flex;flex-direction:column}
+.topbar{display:flex;align-items:center;gap:12px;padding:14px 24px;border-bottom:1px solid var(--line);background:var(--surface);position:sticky;top:0;z-index:20;flex-wrap:wrap}
+.topbar h2{font-size:15.5px;font-weight:620;letter-spacing:-.01em}
+.topbar .sep{color:var(--ink-3)}
+.topbar .meta{color:var(--ink-3);font-size:12px;font-family:var(--mono)}
+.topbar .grow{flex:1}
+.view{padding:22px 24px 60px;max-width:1180px;width:100%}
+/* ── 页脚：项目署名 ───────────────────────────────────────────────── */
+.foot{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:auto;padding:16px 24px 20px;border-top:1px solid var(--line-soft);color:var(--ink-3);font-size:12px}
+.foot .grow{flex:1}
+.foot a{color:var(--ink-3);text-decoration:none;font-family:var(--mono);border-bottom:1px solid transparent}
+.foot a:hover{color:var(--accent-fg);border-bottom-color:currentColor}
+
+/* ── 控件 ─────────────────────────────────────────────────────────── */
+button{font:inherit;color:var(--ink);background:var(--surface-2);border:1px solid var(--line);border-radius:7px;padding:7px 13px;cursor:pointer;transition:border-color .12s,background .12s}
+button:hover:not(:disabled){border-color:var(--accent)}
+button:disabled{opacity:.5;cursor:default}
+button.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink);font-weight:550}
+button.primary:hover:not(:disabled){filter:brightness(1.08)}
+button.ghost{background:transparent}
+button.danger{color:var(--bad)}
+button.danger:hover:not(:disabled){border-color:var(--bad)}
+button.xs{padding:3.5px 9px;font-size:12.5px;border-radius:6px}
+button.icon{padding:7px 9px}
+input,select{font:inherit;color:var(--ink);background:var(--surface-2);border:1px solid var(--line);border-radius:7px;padding:7px 11px;width:100%}
+input:focus,select:focus{outline:none;border-color:var(--accent)}
+label.fld{display:block;margin-bottom:14px}
+label.fld>.lb{display:block;font-size:12.5px;color:var(--ink-2);margin-bottom:5px}
+label.fld>.hint{display:block;font-size:11.5px;color:var(--ink-3);margin-top:4px}
+
+/* ── 统计条（观测区）──────────────────────────────────────────────── */
+.stats{display:grid;grid-template-columns:repeat(6,1fr);border:1px solid var(--line);border-radius:11px;background:var(--surface);overflow:hidden;margin-bottom:20px;box-shadow:var(--shadow)}
+@media (max-width:980px){.stats{grid-template-columns:repeat(3,1fr)}}
+@media (max-width:560px){.stats{grid-template-columns:repeat(2,1fr)}}
+.stat{padding:14px 17px;border-right:1px solid var(--line-soft);border-bottom:1px solid var(--line-soft)}
+.stat .v{font:600 26px/1.15 var(--mono);font-variant-numeric:tabular-nums;letter-spacing:-.02em;white-space:nowrap}
+.stat .k{color:var(--ink-3);font-size:11.5px;margin-top:5px}
+.stat.good .v{color:var(--ok)} .stat.warn .v{color:var(--warn)} .stat.bad .v{color:var(--bad)}
+
+/* ── 面板块 ───────────────────────────────────────────────────────── */
+.box{background:var(--surface);border:1px solid var(--line);border-radius:11px;box-shadow:var(--shadow);margin-bottom:20px;overflow:hidden}
+.box>header{display:flex;align-items:center;gap:10px;padding:12px 17px;border-bottom:1px solid var(--line-soft);flex-wrap:wrap}
+.box>header h3{font-size:13.5px;font-weight:600}
+.box>header h3 .hint{font-size:11.5px;font-weight:400;color:var(--ink-3);margin-left:6px}
+.box>header .grow{flex:1}
+.box>header .note{color:var(--ink-3);font-size:12px;font-variant-numeric:tabular-nums}
+.box .pad{padding:17px}
+
+/* ── 账号表（签名元素：健康色条）─────────────────────────────────── */
+.tbl-wrap{overflow-x:auto}
+.acc{width:100%;border-collapse:collapse;font-size:13px;min-width:760px}
+.acc th{text-align:left;font-weight:500;font-size:11.5px;color:var(--ink-3);padding:9px 11px;border-bottom:1px solid var(--line);white-space:nowrap}
+.acc td{padding:11px;border-bottom:1px solid var(--line-soft);vertical-align:middle}
+.acc tr:last-child td{border-bottom:none}
+.acc tbody tr:hover{background:var(--surface-2)}
+/* 健康色条用真实单元格（td.mark）实现，而不是 tr::before 伪元素：
+   伪元素在表格行内会被浏览器当作匿名单元格插入行首，整行内容右移一列、
+   与表头错位——窗口越宽列越宽越明显。 */
+.acc .mark{width:3px;min-width:3px;padding:0}
+.acc .mark i{display:block;width:3px;height:100%;min-height:36px;background:var(--ok)}
+.acc tbody tr.cool .mark i{background:var(--warn)}
+.acc tbody tr.off .mark i{background:var(--bad)}
+/* 操作列用 width:1px + nowrap 的经典技巧：列宽恰为内容宽，其余列按内容自适应 */
+.acc .c-acts{width:1px;white-space:nowrap}
+.who{min-width:118px;max-width:220px}
+.who .nm{font-weight:550;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.who .id{font-family:var(--mono);font-size:11.5px;color:var(--ink-3);margin-top:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.num{font-family:var(--mono);font-variant-numeric:tabular-nums;white-space:nowrap}
+.muted{color:var(--ink-3)}
+.reason{max-width:280px;font-size:12px;color:var(--ink-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tag{display:inline-flex;align-items:center;gap:5px;padding:1px 9px;border-radius:999px;font-size:11.5px;font-weight:500;white-space:nowrap}
+.tag.ok{background:var(--ok-soft);color:var(--ok)}
+.tag.warn{background:var(--warn-soft);color:var(--warn)}
+.tag.bad{background:var(--bad-soft);color:var(--bad)}
+.tag.mute{background:var(--surface-2);color:var(--ink-3);border:1px solid var(--line)}
+.acts{display:flex;gap:5px;justify-content:flex-end;white-space:nowrap}
+.acts button{padding:3.5px 8px;font-size:12.5px;white-space:nowrap;flex:none}
+.cd{font-family:var(--mono);font-size:11.5px;color:var(--warn);font-variant-numeric:tabular-nums;margin-top:3px}
+.empty{padding:40px 20px;text-align:center;color:var(--ink-3)}
+.empty .big{font-size:14px;color:var(--ink-2);margin-bottom:6px}
+.bar{height:4px;background:var(--line);border-radius:2px;margin-top:5px;overflow:hidden;max-width:120px}
+.bar i{display:block;height:100%;background:var(--accent);border-radius:2px}
 .chips{display:flex;flex-wrap:wrap;gap:6px}
-.chip{background:rgba(255,255,255,.8);border:1px solid var(--line);border-radius:999px;padding:4px 11px;font-size:12px;color:var(--muted);font-family:var(--font-mono)}
-.hidden{display:none!important}
-.empty{padding:28px;text-align:center;color:var(--muted)}
-.foot{margin-top:10px;color:var(--muted);font-size:12px;display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap}
-.modal-mask{position:fixed;inset:0;background:rgba(148,163,184,.32);display:flex;align-items:center;justify-content:center;padding:18px;z-index:40;backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px)}
-.modal{width:min(560px,100%);background:var(--card2);border:1px solid rgba(255,255,255,.9);border-radius:18px;box-shadow:var(--shadow-lg);overflow:hidden;backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px)}
-.modal-h{display:flex;align-items:center;justify-content:space-between;padding:14px 16px;border-bottom:1px solid var(--line)}
-.modal-h h3{margin:0;font-size:16px;font-weight:600;color:#0F172A}
-.modal-b{padding:16px;display:flex;flex-direction:column;gap:12px}
-.modal-f{padding:12px 16px;border-top:1px solid var(--line);display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap}
-.urlbox{background:rgba(255,255,255,.85);border:1px solid var(--line);border-radius:var(--radius-sm);padding:10px 12px;word-break:break-all;font-family:var(--font-mono);font-size:12px;max-height:120px;overflow:auto;user-select:all}
-.steps{display:flex;flex-direction:column;gap:6px;font-size:13px;color:var(--muted)}
-.steps b{color:#0F172A}
-.spin{display:inline-block;width:12px;height:12px;border:2px solid color-mix(in srgb,var(--accent) 30%,transparent);border-top-color:var(--accent);border-radius:50%;animation:sp .8s linear infinite;vertical-align:-1px;margin-right:6px}
+.chip{background:var(--surface-2);border:1px solid var(--line);border-radius:999px;padding:4px 11px;font-size:12px;color:var(--ink-2);font-family:var(--mono)}
+button.chip{cursor:pointer}
+button.chip:hover{border-color:var(--accent);color:var(--ink)}
+.chip.mute{color:var(--ink-3)}
+.kv{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}
+.kv .cell{border:1px solid var(--line-soft);border-radius:9px;padding:11px 13px}
+.kv .cell .k{font-size:11.5px;color:var(--ink-3)}
+.kv .cell .v{font:600 15px/1.3 var(--mono);font-variant-numeric:tabular-nums;margin-top:4px;word-break:break-all}
+
+/* ── 操作记录（终端质感）────────────────────────────────────────── */
+#logBox{max-height:460px;overflow:auto;margin:0;padding:15px 17px;font:12px/1.75 var(--mono);white-space:pre-wrap;word-break:break-all;color:var(--ink-2)}
+#logBox .ln{display:block}
+#logBox .ln .ts{color:var(--ink-3);margin-right:8px}
+#logBox .ln.e{color:var(--bad)}
+#logChips .chip.on{background:var(--accent-soft);color:var(--accent-fg);border-color:transparent;font-weight:550}
+
+/* ── 登录 ─────────────────────────────────────────────────────────── */
+.login{min-height:100vh;display:grid;place-items:center;padding:24px}
+.login-box{width:min(420px,100%);background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:28px;box-shadow:var(--shadow)}
+.login-box .brand{padding:0 0 20px;border:none;display:flex;align-items:center;gap:13px}
+/* logo 渐变必须向深端收，不能向白端收：白字要压在两个色停上，
+   浅色主题里若渐变靠向白，矩標字母会掉到 2:1 以下。 */
+.logo{width:42px;height:42px;border-radius:13px;background:linear-gradient(135deg,var(--accent),color-mix(in srgb,var(--accent) 70%,#000));display:grid;place-items:center;font-weight:800;color:#fff;font-family:var(--mono);letter-spacing:-.5px}
+.login-box h1{margin:0;font-size:18px}
+.login-box p{margin:3px 0 0;color:var(--ink-3);font-size:12px}
+
+/* ── 设置菜单（顶栏齿轮）─────────────────────────────────────────── */
+.menu-wrap{position:relative}
+.menu{position:absolute;right:0;top:calc(100% + 8px);z-index:40;min-width:248px;background:var(--surface);border:1px solid var(--line);border-radius:11px;padding:7px;text-align:left;box-shadow:0 18px 44px -18px rgba(0,0,0,.5), var(--shadow)}
+.menu .grp{padding:7px 10px 5px;font-size:11px;color:var(--ink-3)}
+.menu button{display:flex;align-items:center;gap:10px;width:100%;padding:7px 10px;background:transparent;border:none;border-radius:7px;font-size:13.5px;color:var(--ink-2)}
+.menu button:hover:not(:disabled){background:var(--surface-2);color:var(--ink)}
+.menu button.on{color:var(--accent-fg);font-weight:550}
+.menu .sw{width:15px;height:15px;border-radius:5px;border:1px solid var(--line);flex:none}
+.menu .tick{margin-left:auto;color:var(--accent-fg);font-weight:700;opacity:0}
+.menu button.on .tick{opacity:1}
+.menu hr{border:none;border-top:1px solid var(--line-soft);margin:6px 4px}
+.menu .who{padding:5px 10px 7px;font-size:11.5px;color:var(--ink-3);word-break:break-all}
+.menu button.danger{color:var(--bad)}
+.menu button.danger:hover:not(:disabled){background:var(--bad-soft);color:var(--bad)}
+@media (max-width:760px){.menu{right:auto;left:0}}
+
+/* ── 弹层 ─────────────────────────────────────────────────────────── */
+.veil{position:fixed;inset:0;background:rgba(6,8,13,.62);backdrop-filter:blur(2px);display:none;z-index:60}
+.veil.on{display:flex;align-items:center;justify-content:center;padding:20px}
+.dlg{background:var(--surface);border:1px solid var(--line);border-radius:13px;width:560px;max-width:100%;max-height:86vh;display:flex;flex-direction:column;box-shadow:0 24px 64px -24px rgba(0,0,0,.6)}
+.dlg header{padding:17px 20px 13px;border-bottom:1px solid var(--line-soft)}
+.dlg header h3{font-size:15px;font-weight:620}
+.dlg header .hint{color:var(--ink-3);font-size:12.5px;margin-top:5px}
+.dlg .body{padding:18px 20px;overflow:auto}
+.dlg footer{padding:13px 20px;border-top:1px solid var(--line-soft);display:flex;gap:10px;flex-wrap:wrap}
+.dlg footer .grow{flex:1}
+.url{background:var(--surface-2);border:1px solid var(--line);border-radius:8px;padding:11px 13px;font:12px var(--mono);word-break:break-all;color:var(--accent-fg);margin:8px 0 12px;user-select:all}
+.state{font-size:13px;color:var(--ink-2);display:flex;align-items:center;gap:8px}
+.state.ok{color:var(--ok)} .state.err{color:var(--bad)}
+.steps{display:flex;flex-direction:column;gap:6px;font-size:12.5px;color:var(--ink-3)}
+.steps b{color:var(--ink-2)}
+.dots::after{content:"…";animation:blink 1.2s steps(4) infinite}
+@keyframes blink{0%{opacity:1}50%{opacity:.3}100%{opacity:1}}
+.spin{display:inline-block;width:12px;height:12px;border:2px solid color-mix(in srgb,var(--accent) 30%,transparent);border-top-color:var(--accent);border-radius:50%;animation:sp .8s linear infinite;flex:none}
 @keyframes sp{to{transform:rotate(360deg)}}
-.status-line{min-height:20px;font-size:13px}
-@media (prefers-reduced-motion:reduce){
-  *{animation:none!important;transition:none!important}
-  .btn:hover{transform:none}
+
+/* ── Toast ───────────────────────────────────────────────────────── */
+#toasts{position:fixed;right:20px;bottom:20px;z-index:90;display:flex;flex-direction:column;gap:8px;align-items:flex-end}
+.tst{background:var(--raise);border:1px solid var(--line);border-left:3px solid var(--ink-3);border-radius:8px;padding:10px 15px;font-size:13px;box-shadow:var(--shadow);max-width:380px}
+.tst.ok{border-left-color:var(--ok)} .tst.err{border-left-color:var(--bad)}
+
+.pulse{width:7px;height:7px;border-radius:50%;background:var(--ok);flex:none}
+.pulse.bad{background:var(--bad)} .pulse.warn{background:var(--warn)}
+
+@media (max-width:760px){
+  .shell{grid-template-columns:1fr}
+  .nav{position:static;height:auto;flex-direction:row;align-items:center;overflow-x:auto}
+  /* 窄屏导航变横向滚动条：条目必须不换行，否则每个字被压成一列竖排 */
+  .nav ul{display:flex;padding:8px}
+  .nav a{flex:none;white-space:nowrap}
+  .nav .sig{border:none;white-space:nowrap}
+  .brand{border:none;padding:14px;flex:none}
+  .brand .sub{display:none}
+  .stats{grid-template-columns:repeat(2,1fr)}
+  .stat{border-right:none}
+  .view{padding:16px 14px 48px}
+  .foot{padding:14px 14px 18px}
 }
 </style>
-
-
 </head>
 <body>
+<noscript><p style="padding:24px">控制台需要启用 JavaScript。</p></noscript>
+
+<!-- 登录：经 hub 反代时 hub 会注入 api_key，直连且未带 key 时回退到此表单 -->
 <div id="loginView" class="login hidden">
   <div class="login-box">
-    <div class="brand" style="margin-bottom:14px">
-      <div class="logo">__LOGO__</div>
-      <div>
-        <h1 style="font-size:18px;margin:0">__SERVICE_TITLE__</h1>
-        <p style="margin:2px 0 0;color:var(--muted);font-size:12px">管理控制台 · 使用 API Key 登录</p>
-      </div>
-    </div>
-    <div class="field">
-      <label>API Key</label>
-      <input id="keyInput" type="password" placeholder="Bearer token / config.json api_key" autocomplete="off"/>
-    </div>
-    <button class="btn primary" style="width:100%" id="loginBtn">进入控制台</button>
-    <p class="muted" style="margin-top:12px;font-size:12px">密钥仅保存在本机浏览器 localStorage，请求以 Authorization: Bearer 发送。</p>
-  </div>
-</div>
-
-<div id="appView" class="wrap hidden">
-  <div class="top">
     <div class="brand">
       <div class="logo">__LOGO__</div>
       <div>
         <h1>__SERVICE_TITLE__</h1>
-        <p id="subTitle">账号池 · 签到 · 积分 · 模型</p>
+        <p>管理控制台 · 使用 API Key 登录</p>
       </div>
     </div>
-    <div class="actions">
-      <button class="btn primary" id="btnAddAccount">＋ 授权登录</button>
-      <button class="btn" id="btnRefresh">刷新</button>
-      <button class="btn" id="btnCredits">拉积分</button>
-      <button class="btn" id="btnCheckin">全员签到</button>
-      <button class="btn" id="btnKeepalive">保活 Token</button>
-      <button class="btn" id="btnReload">重载 auths</button>
-      <button class="btn ghost" id="btnLogout">退出</button>
-    </div>
-  </div>
-
-  <div class="grid">
-    <div class="stat"><div class="k">账号总数</div><div class="v" id="sTotal">—</div></div>
-    <div class="stat"><div class="k">健康可用</div><div class="v" id="sHealthy">—</div></div>
-    <div class="stat"><div class="k">冷却 / 禁用</div><div class="v" id="sBad">—</div></div>
-    <div class="stat"><div class="k">积分合计</div><div class="v" id="sCredits">—</div></div>
-  </div>
-
-  <div class="card">
-    <div class="card-h">
-      <h2>账号列表</h2>
-      <div style="display:flex;gap:8px;align-items:center">
-        <span class="muted mono" id="updatedAt"></span>
-        <button class="btn primary" id="btnAddAccount2" style="padding:6px 10px">＋ 授权登录</button>
-      </div>
-    </div>
-    <div class="card-b" style="padding:0;overflow-x:auto">
-      <table class="table" id="acctTable">
-        <thead>
-          <tr>
-            <th>账号</th>
-            <th>积分</th>
-            <th>状态</th>
-            <th>原因 / 冷却至</th>
-            <th>操作</th>
-          </tr>
-        </thead>
-        <tbody id="acctBody"><tr><td colspan="5" class="empty">加载中…</td></tr></tbody>
-      </table>
-    </div>
-  </div>
-
-  <div class="card">
-    <div class="card-h">
-      <h2>福利额度</h2>
-      <button class="btn" id="btnBenefitRefresh">刷新额度</button>
-    </div>
-    <div class="card-b" style="padding:0;overflow-x:auto">
-      <table class="table" id="benefitTable">
-        <thead>
-          <tr>
-            <th>账号</th>
-            <th>上次签到</th>
-            <th>总额度</th>
-            <th>已用</th>
-            <th>剩余</th>
-            <th>进度</th>
-          </tr>
-        </thead>
-        <tbody id="benefitBody"><tr><td colspan="6" class="empty">点击「刷新额度」查询</td></tr></tbody>
-      </table>
-    </div>
-  </div>
-
-  <div class="card">
-    <div class="card-h"><h2>模型</h2><span class="muted" id="modelCount"></span></div>
-    <div class="card-b"><div class="chips" id="modelChips"></div></div>
-  </div>
-
-  <div class="card">
-    <div class="card-h"><h2>调度</h2></div>
-    <div class="card-b">
-      <div class="chips" id="schedChips"></div>
-      <div class="foot">
-        <span>OpenAI base: <span class="mono" id="baseUrl"></span></span>
-        <span>API: <span class="mono">/v1/chat/completions</span></span>
-      </div>
-    </div>
+    <label class="fld"><span class="lb">API Key</span>
+      <input id="keyInput" type="password" placeholder="config.json 中的 api_key" autocomplete="current-password">
+      <span class="hint">密钥仅保存在本机浏览器 localStorage，请求以 Authorization: Bearer 发送。</span>
+    </label>
+    <button class="primary" style="width:100%" id="loginBtn">进入控制台</button>
+    <div class="state err" id="loginErr" hidden style="margin-top:12px"></div>
   </div>
 </div>
 
-<div class="toast" id="toast"></div>
+<div id="appView" class="shell hidden">
+  <nav class="nav">
+    <div class="brand">
+      <div class="name">__SERVICE_TITLE__</div>
+      <div class="sub" id="navSub">控制台</div>
+    </div>
+    <ul>
+      <li><a href="#accounts" data-view="accounts" class="on">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="8" cy="5.5" r="2.6"/><path d="M2.8 13.5c.6-2.6 2.7-4 5.2-4s4.6 1.4 5.2 4"/></svg>
+        账号池</a></li>
+      <li><a href="#benefit" data-view="benefit">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M2 13.5h12"/><path d="M4.5 13.5V8.2M8 13.5V3.5M11.5 13.5v-3"/></svg>
+        福利额度</a></li>
+      <li><a href="#models" data-view="models">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M8 1.8 14 5v6L8 14.2 2 11V5z"/><path d="M2 5l6 3.2L14 5M8 8.2v6"/></svg>
+        模型</a></li>
+      <li><a href="#schedule" data-view="schedule">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="8" cy="8" r="5.6"/><path d="M8 4.6V8l2.4 1.6"/></svg>
+        调度</a></li>
+      <li><a href="#log" data-view="log">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M2.5 3.5h11M2.5 8h11M2.5 12.5h7"/></svg>
+        操作记录</a></li>
+    </ul>
+    <div class="sig">
+      <div class="row"><span class="pulse" id="navPulse"></span><span id="navState">连接中</span></div>
+      <div class="row" style="margin-top:5px"><span class="mono" id="navBase">-</span></div>
+    </div>
+  </nav>
 
-<div id="oauthModal" class="modal-mask hidden">
-  <div class="modal">
-    <div class="modal-h">
-      <h3>OAuth 授权登录</h3>
-      <button class="btn ghost" id="oauthClose" type="button">关闭</button>
-    </div>
-    <div class="modal-b">
-      <div class="steps">
-        <div><b>1.</b> 点击下方按钮在浏览器打开授权页</div>
-        <div><b>2.</b> 使用目标账号完成登录 / 授权</div>
-        <div><b>3.</b> 若浏览器停在 127.0.0.1，把地址栏中的完整回调地址粘贴到下方</div>
-        <div><b>4.</b> 回到本页，等待自动检测或点「我已授权」</div>
+  <div class="main">
+    <div class="topbar">
+      <h2 id="ttl">账号池</h2>
+      <span class="sep">/</span>
+      <span class="meta" id="subMeta">-</span>
+      <div class="grow"></div>
+      <button id="btnRefresh">刷新</button>
+      <div class="menu-wrap">
+        <button class="icon ghost" id="btnSettings" title="设置" aria-label="设置" aria-haspopup="menu" aria-expanded="false">
+          <svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.3"><circle cx="8" cy="8" r="2.1"/><path d="M8 1.5v1.8M8 12.7v1.8M1.5 8h1.8M12.7 8h1.8M3.4 3.4l1.3 1.3M11.3 11.3l1.3 1.3M12.6 3.4l-1.3 1.3M4.7 11.3l-1.3 1.3"/></svg>
+        </button>
+        <div class="menu" id="settingsMenu" role="menu" hidden>
+          <div class="grp">主题</div>
+          <button data-theme-opt="graphite" role="menuitem"><span class="sw" style="background:linear-gradient(135deg,#14171f 55%,#38bdf8)"></span>石墨<span class="tick">✓</span></button>
+          <button data-theme-opt="midnight" role="menuitem"><span class="sw" style="background:linear-gradient(135deg,#101524 55%,#5eead4)"></span>午夜<span class="tick">✓</span></button>
+          <button data-theme-opt="light" role="menuitem"><span class="sw" style="background:linear-gradient(135deg,#ffffff 45%,#0284c7)"></span>浅色<span class="tick">✓</span></button>
+          <button data-theme-opt="sand" role="menuitem"><span class="sw" style="background:linear-gradient(135deg,#fffdfa 45%,#d97706)"></span>暖沙<span class="tick">✓</span></button>
+          <hr>
+          <div class="grp">会话</div>
+          <div class="who" id="menuKey">未设置密钥</div>
+          <button id="btnLogout" class="danger" role="menuitem">退出登录</button>
+        </div>
       </div>
-      <div>
-        <div class="muted" style="font-size:12px;margin-bottom:6px">授权链接</div>
-        <div class="urlbox" id="oauthUrl">（发起后显示）</div>
-      </div>
-      <div>
-        <div class="muted" style="font-size:12px;margin-bottom:6px">远程浏览器回调中转</div>
-        <input id="oauthCallbackUrl" type="url" placeholder="http://127.0.0.1:7866/oauth/callback?..." autocomplete="off"/>
-      </div>
-      <div class="status-line muted" id="oauthStatus">尚未开始</div>
     </div>
-    <div class="modal-f">
-      <button class="btn" id="oauthCopy" type="button" disabled>复制链接</button>
-      <button class="btn" id="oauthOpen" type="button" disabled>打开授权页</button>
-      <button class="btn" id="oauthImport" type="button" disabled>提交回调地址</button>
-      <button class="btn" id="oauthPoll" type="button" disabled>我已授权</button>
-      <button class="btn primary" id="oauthStart" type="button">发起授权</button>
-    </div>
+
+    <!-- 账号池 -->
+    <section class="view" id="view-accounts">
+      <div class="stats">
+        <div class="stat"><div class="v" id="sTotal">-</div><div class="k">账号总数</div></div>
+        <div class="stat good"><div class="v" id="sHealthy">-</div><div class="k">可用</div></div>
+        <div class="stat warn"><div class="v" id="sCooling">-</div><div class="k">冷却中</div></div>
+        <div class="stat bad"><div class="v" id="sDisabled">-</div><div class="k">已禁用</div></div>
+        <div class="stat"><div class="v" id="sInflight">-</div><div class="k">在途会话</div></div>
+        <div class="stat"><div class="v" id="sErrs">-</div><div class="k">故障计数合计</div></div>
+      </div>
+
+      <div class="box">
+        <header>
+          <h3>账号池</h3>
+          <span class="grow"></span>
+          <span class="note" id="accNote"></span>
+          <button class="xs" id="btnCredits">全员刷新状态</button>
+          <button class="xs" id="btnKeepaliveAll">全员保活</button>
+          <button class="xs" id="btnReload">重载 auths</button>
+          <button class="xs primary" id="btnAdd">＋ 授权登录</button>
+        </header>
+        <div class="tbl-wrap">
+          <table class="acc">
+            <thead><tr>
+              <th class="mark" aria-hidden="true"></th>
+              <th>账号</th><th>状态</th><th>默认模型</th>
+              <th>Token 剩余</th><th>在途</th><th>故障 / 原因</th><th class="c-acts"></th>
+            </tr></thead>
+            <tbody id="accBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- 福利额度 -->
+    <section class="view" id="view-benefit" hidden>
+      <div class="box">
+        <header>
+          <h3>福利额度 <span class="hint">上游限时福利签到与余额</span></h3>
+          <span class="grow"></span>
+          <span class="note" id="benefitNote">未查询</span>
+          <button class="xs" id="btnBenefitRefresh">刷新额度</button>
+          <button class="xs primary" id="btnCheckinAll">全部领取</button>
+        </header>
+        <div class="tbl-wrap">
+          <table class="acc">
+            <thead><tr>
+              <th class="mark" aria-hidden="true"></th>
+              <th>账号</th><th>上次领取</th><th>总额度</th><th>已用</th><th>剩余</th><th>剩余占比</th>
+            </tr></thead>
+            <tbody id="benefitBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- 模型 -->
+    <section class="view" id="view-models" hidden>
+      <div class="box">
+        <header>
+          <h3>可用模型 <span class="hint">已过滤已知不可用条目；点击标签复制模型 ID</span></h3>
+          <span class="grow"></span>
+          <span class="note" id="modelCount">-</span>
+          <button class="xs" id="btnModels">重新获取</button>
+        </header>
+        <div class="pad"><div class="chips" id="modelChips"></div></div>
+      </div>
+      <div class="box">
+        <header><h3>接入信息</h3></header>
+        <div class="pad">
+          <div class="kv">
+            <div class="cell"><div class="k">OpenAI 兼容 base</div><div class="v" id="baseUrl">-</div></div>
+            <div class="cell"><div class="k">对话端点</div><div class="v">/v1/chat/completions</div></div>
+            <div class="cell"><div class="k">模型列表</div><div class="v">/v1/models</div></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 调度 -->
+    <section class="view" id="view-schedule" hidden>
+      <div class="box">
+        <header>
+          <h3>后台巡检与保活</h3>
+          <span class="grow"></span>
+          <button class="xs" id="btnSchedRefresh">刷新</button>
+        </header>
+        <div class="pad"><div class="kv" id="schedKv"></div></div>
+      </div>
+    </section>
+
+    <!-- 操作记录（本页发出的动作与结果）-->
+    <section class="view" id="view-log" hidden>
+      <div class="box">
+        <header>
+          <h3>操作记录 <span class="hint">本页发出的动作与结果</span></h3>
+          <span class="grow"></span>
+          <span class="chips" id="logChips">
+            <button class="xs chip on" data-ch="all">全部</button>
+            <button class="xs chip" data-ch="op">操作</button>
+            <button class="xs chip" data-ch="err">错误</button>
+          </span>
+          <button class="xs" id="btnLogClear">清空</button>
+        </header>
+        <pre id="logBox"></pre>
+      </div>
+    </section>
+
+    <!-- 页脚：项目署名，@ 指向作者 GitHub -->
+    <footer class="foot">
+      <span>__SERVICE_TITLE__</span>
+      <span class="grow"></span>
+      <a href="https://github.com/hj01857655" target="_blank" rel="noopener noreferrer">@hj01857655</a>
+    </footer>
   </div>
 </div>
+
+<!-- 授权登录 -->
+<div class="veil" id="oauthVeil">
+  <div class="dlg">
+    <header>
+      <h3>授权登录</h3>
+      <div class="hint">浏览器完成上游账号登录，网关自动载入账号池，无需重启。</div>
+    </header>
+    <div class="body">
+      <div class="steps" style="margin-bottom:12px">
+        <div><b>1.</b> 点「发起授权」获取链接</div>
+        <div><b>2.</b> 在浏览器打开并完成登录</div>
+        <div><b>3.</b> 若浏览器停在 127.0.0.1，把地址栏完整回调地址粘贴到下方中转</div>
+      </div>
+      <div id="addLoad" class="state" hidden><span class="spin"></span>正在获取授权链接</div>
+      <div id="addReady" hidden>
+        <div class="state">在浏览器打开以下链接并登录：</div>
+        <div class="url" id="addUrl"></div>
+        <div class="state" id="addPoll"><span class="dots">等待授权完成，自动检测中</span></div>
+      </div>
+      <div id="addDone" class="state ok" hidden></div>
+      <div id="addErr" class="state err" hidden></div>
+      <label class="fld" style="margin:14px 0 0" id="addImportWrap" hidden><span class="lb">远程浏览器回调中转</span>
+        <input id="addCallbackUrl" type="url" placeholder="http://127.0.0.1:7866/oauth/callback?..." autocomplete="off">
+      </label>
+    </div>
+    <footer>
+      <span class="grow"></span>
+      <button id="btnStartLogin" class="primary">发起授权</button>
+      <button id="btnCopyUrl" hidden>复制链接</button>
+      <button id="btnOpenUrl" hidden>浏览器打开</button>
+      <button id="btnImportCallback" hidden>提交回调地址</button>
+      <button id="btnCloseAdd">关闭</button>
+    </footer>
+  </div>
+</div>
+
+<div id="toasts"></div>
 
 <script>
 const SERVICE = "__SERVICE_NAME__";
 const KEY_STORE = SERVICE + "_panel_api_key";
+const THEME_STORE = SERVICE + "_panel_theme";
+// 面板可挂在根路径或 /panel 前缀下，api 路径按当前挂载点拼。
 const BASE = (() => {
   let p = location.pathname.replace(/\/+$/, "") || "";
   if (p.endsWith("/panel")) p = p.slice(0, -"/panel".length);
@@ -266,388 +506,591 @@ const BASE = (() => {
 })();
 const $ = (id) => document.getElementById(id);
 
-function toast(msg, ok=true){
-  const t = $("toast");
-  t.textContent = msg;
-  t.style.borderColor = ok ? "rgba(34,197,94,.4)" : "rgba(239,68,68,.45)";
-  t.classList.add("show");
-  clearTimeout(t._tm);
-  t._tm = setTimeout(()=>t.classList.remove("show"), 3200);
+const VIEW_TITLE = {
+  accounts: ["账号池", "账号健康 · Token · 在途"],
+  benefit: ["福利额度", "限时福利签到与余额"],
+  models: ["模型", "上游可用模型与接入地址"],
+  schedule: ["调度", "后台巡检与保活参数"],
+  log: ["操作记录", "本页动作流水"],
+};
+
+const state = {
+  view: "accounts",
+  accounts: [],
+  benefit: null,
+  overview: null,
+  log: [],
+  logFilter: "all",
+  refreshing: false,
+  oauth: { id: "", timer: null, busy: false },
+};
+
+/* ── 基础工具 ─────────────────────────────────────────────────────── */
+function escapeHtml(s){
+  return String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]));
+}
+function pad2(n){ return String(n).padStart(2, "0"); }
+function fmtDur(ms){
+  if (ms < 0) ms = 0;
+  const s = Math.floor(ms / 1000);
+  if (s < 60) return s + "s";
+  if (s < 3600) return Math.floor(s / 60) + "m" + pad2(s % 60) + "s";
+  return Math.floor(s / 3600) + "h" + pad2(Math.floor((s % 3600) / 60)) + "m";
+}
+function fmtTime(t){
+  if (!t || String(t).startsWith("0001-")) return "—";
+  const d = new Date(t);
+  if (isNaN(d.getTime())) return String(t);
+  return d.toLocaleString();
 }
 
+function toast(msg, ok = true){
+  const t = document.createElement("div");
+  t.className = "tst " + (ok ? "ok" : "err");
+  t.textContent = msg;
+  $("toasts").appendChild(t);
+  setTimeout(() => t.remove(), 3600);
+}
+
+function logLine(ch, text){
+  state.log.push({ t: new Date(), ch: ch, text: text });
+  if (state.log.length > 500) state.log.shift();
+  if (state.view === "log") renderLog();
+}
+
+/* ── API ──────────────────────────────────────────────────────────── */
 function getKey(){ return localStorage.getItem(KEY_STORE) || ""; }
 function setKey(k){ localStorage.setItem(KEY_STORE, k); }
 function clearKey(){ localStorage.removeItem(KEY_STORE); }
 
-async function api(path, opts={}){
-  const headers = Object.assign({"Content-Type":"application/json"}, opts.headers||{});
+async function api(path, opts = {}){
+  const headers = Object.assign({ "Content-Type": "application/json" }, opts.headers || {});
   const key = getKey();
   if (key) headers["Authorization"] = "Bearer " + key;
-  const url = (path.startsWith("http") || path.startsWith(BASE + "/") || !path.startsWith("/"))
-    ? path : (BASE + path);
-  const res = await fetch(url, Object.assign({}, opts, {headers}));
+  const res = await fetch(BASE + path, Object.assign({}, opts, { headers }));
   const text = await res.text();
   let data = null;
-  try { data = text ? JSON.parse(text) : null; } catch { data = {raw:text}; }
+  try { data = text ? JSON.parse(text) : null; } catch { data = { raw: text }; }
   if (!res.ok){
-    const msg = (data && (data.error?.message || data.message || data.error)) || (text || res.statusText);
-    throw new Error(typeof msg === "string" ? msg : JSON.stringify(msg));
+    const err = data && data.error;
+    const msg = (err && (err.message || err.code)) || (data && (data.message || data.error)) || text || res.statusText;
+    const e = new Error(typeof msg === "string" ? msg : JSON.stringify(msg));
+    e.status = res.status;
+    throw e;
   }
   return data;
 }
 
-function statusBadge(a){
-  if (a.disabled) return '<span class="badge bad">禁用</span>';
-  if (a.cooling) return '<span class="badge warn">冷却</span>';
-  return '<span class="badge ok">健康</span>';
-}
-
-function fmtTime(t){
-  if (!t || t.startsWith("0001-")) return "—";
+async function action(path, body, label){
   try {
-    const d = new Date(t);
-    if (isNaN(d.getTime())) return t;
-    return d.toLocaleString();
-  } catch { return t; }
-}
-
-function shortUID(u){
-  if (!u) return "—";
-  return u.length > 14 ? u.slice(0,8) + "…" + u.slice(-4) : u;
-}
-
-function render(data){
-  const st = data.stats || {};
-  $("sTotal").textContent = st.total ?? 0;
-  $("sHealthy").textContent = st.healthy ?? 0;
-  $("sBad").textContent = `${st.cooling??0} / ${st.disabled??0}`;
-  $("sCredits").textContent = Number(st.credits||0).toLocaleString();
-  $("updatedAt").textContent = "更新于 " + new Date().toLocaleTimeString();
-  $("baseUrl").textContent = location.origin + BASE + "/v1";
-  $("subTitle").textContent = (data.service || SERVICE) + " · " + (data.region || "cn");
-
-  const body = $("acctBody");
-  const accounts = data.accounts || [];
-  if (!accounts.length){
-    body.innerHTML = `<tr><td colspan="5" class="empty">暂无账号。点击右上角 <b>授权登录</b> 添加，或服务器运行 <span class="mono">./login.sh</span></td></tr>`;
-  } else {
-    body.innerHTML = accounts.map(a => {
-      const reason = a.reason || "—";
-      const until = a.cooling ? fmtTime(a.until) : "—";
-      return `<tr>
-        <td>
-          <div><strong>${escapeHtml(a.nickname || "未命名")}</strong></div>
-          <div class="mono muted" title="${escapeHtml(a.uid||"")}">${escapeHtml(shortUID(a.uid))}</div>
-        </td>
-        <td><strong>${Number(a.credits||0).toLocaleString()}</strong></td>
-        <td>${statusBadge(a)}${a.err_count?` <span class="badge info">err ${a.err_count}</span>`:""}</td>
-        <td><div class="muted">${escapeHtml(reason)}</div><div class="mono muted" style="font-size:11px">${escapeHtml(until)}</div></td>
-        <td><div class="row-actions">
-          <button class="btn" data-act="credits" data-uid="${escapeAttr(a.uid)}">积分</button>
-          <button class="btn" data-act="checkin" data-uid="${escapeAttr(a.uid)}">签到</button>
-          ${a.disabled
-            ? `<button class="btn" data-act="enable" data-uid="${escapeAttr(a.uid)}">启用</button>`
-            : `<button class="btn danger" data-act="disable" data-uid="${escapeAttr(a.uid)}">禁用</button>`}
-        </div></td>
-      </tr>`;
-    }).join("");
+    const data = await api(path, { method: "POST", body: JSON.stringify(body || {}) });
+    const msg = data.message || (data.ok ? "完成" : "完成（有失败）");
+    toast(msg, !!data.ok);
+    logLine(data.ok ? "op" : "err", (label || path) + " · " + msg);
+    await loadOverview();
+    return data;
+  } catch (e){
+    toast(e.message, false);
+    logLine("err", (label || path) + " · " + e.message);
+    if (e.status === 401) showLogin("密钥不正确，请重试。");
+    return null;
   }
+}
 
-  const models = data.models || [];
+/* ── 渲染：账号池 ─────────────────────────────────────────────────── */
+function renderAccounts(){
+  const list = state.accounts;
+  let healthy = 0, cooling = 0, off = 0, inflight = 0, errs = 0;
+  for (const a of list){
+    if (a.disabled) off++;
+    else if (a.cooling) cooling++;
+    else healthy++;
+    inflight += Number(a.active_concurrent || 0);
+    errs += Number(a.err_count || 0);
+  }
+  $("sTotal").textContent = list.length;
+  $("sHealthy").textContent = healthy;
+  $("sCooling").textContent = cooling;
+  $("sDisabled").textContent = off;
+  $("sInflight").textContent = inflight;
+  $("sErrs").textContent = errs;
+  // 池健康：无可用账号才算异常，仅剩冷却态算告警。
+  $("navPulse").className = "pulse" + (list.length && !healthy ? (off === list.length ? " bad" : " warn") : "");
+  $("navState").textContent = list.length ? (healthy + " 可用 / " + list.length + " 账号") : "账号池为空";
+  $("accNote").textContent = list.length ? (healthy + " 可用 · " + cooling + " 冷却 · " + off + " 禁用") : "空池";
+
+  const body = $("accBody");
+  if (!list.length){
+    body.innerHTML = '<tr><td colspan="8" class="empty"><div class="big">暂无账号</div>' +
+      '点击右上角「＋ 授权登录」添加，或在服务器运行 login.sh</td></tr>';
+    return;
+  }
+  body.innerHTML = list.map(a => {
+    const cls = a.disabled ? "off" : (a.cooling ? "cool" : "");
+    const tag = a.disabled ? '<span class="tag bad">已禁用</span>'
+      : (a.cooling ? '<span class="tag warn">冷却中</span>' : '<span class="tag ok">可用</span>');
+    // 冷却纯时间语义：只倒计时，不给手动清除——到期由服务端按时间自行恢复。
+    const cd = (a.cooling && a.until) ? '<div class="cd" data-until="' + escapeHtml(a.until) + '">冷却中</div>' : "";
+    const model = a.default_model ? escapeHtml(a.default_model) : '<span class="muted">默认</span>';
+    const reason = a.reason ? escapeHtml(a.reason) : '<span class="muted">—</span>';
+    const uid = a.uid || a.name || "";
+    return '<tr class="' + cls + '">' +
+      '<td class="mark" aria-hidden="true"><i></i></td>' +
+      '<td class="who"><div class="nm">' + escapeHtml(a.nickname || a.name || "未命名") + '</div>' +
+        '<div class="id" title="' + escapeHtml(uid) + '">' + escapeHtml(uid) + '</div></td>' +
+      '<td>' + tag + cd + '</td>' +
+      '<td class="num">' + model + '</td>' +
+      '<td class="num" title="' + escapeHtml(a.expires_at || "") + '">' + escapeHtml(a.token_remaining || "—") + '</td>' +
+      '<td class="num">' + Number(a.active_concurrent || 0) + ' / ' + Number(a.max_concurrent || 0) + '</td>' +
+      '<td class="reason" title="' + escapeHtml(a.last_error || a.reason || "") + '">' +
+        (a.err_count ? '<span class="tag mute">err ' + Number(a.err_count) + '</span> ' : "") + reason + '</td>' +
+      '<td class="c-acts"><div class="acts">' +
+        '<button data-act="credits" data-uid="' + escapeHtml(uid) + '">刷新</button>' +
+        '<button data-act="keepalive" data-uid="' + escapeHtml(uid) + '">保活</button>' +
+        (a.disabled
+          ? '<button data-act="enable" data-uid="' + escapeHtml(uid) + '">启用</button>'
+          : '<button class="danger" data-act="disable" data-uid="' + escapeHtml(uid) + '">禁用</button>') +
+      '</div></td></tr>';
+  }).join("");
+  tickCountdowns();
+}
+
+/* 冷却倒计时：只改文本，不重渲染整表。到期补一次读数—服务端冷却就是按时间恢复的。 */
+let tickBusy = false;
+function tickCountdowns(){
+  const now = Date.now();
+  let expired = false;
+  document.querySelectorAll(".cd[data-until]").forEach(el => {
+    const until = new Date(el.dataset.until).getTime();
+    if (isNaN(until)) return;
+    const left = until - now;
+    if (left <= 0){ expired = true; el.textContent = "恢复中"; return; }
+    el.textContent = "剩 " + fmtDur(left);
+  });
+  if (expired && !tickBusy){
+    tickBusy = true;
+    setTimeout(async () => {
+      try { await loadOverview(); } catch {}
+      tickBusy = false;
+    }, 1200);
+  }
+}
+setInterval(tickCountdowns, 1000);
+
+/* ── 渲染：福利额度 ───────────────────────────────────────────────── */
+function nameOf(uid){
+  const a = state.accounts.find(x => (x.uid || x.name) === uid);
+  return a ? (a.nickname || a.name || uid) : uid;
+}
+function renderBenefit(){
+  const body = $("benefitBody");
+  const results = state.benefit && state.benefit.results;
+  if (!results || !results.length){
+    body.innerHTML = '<tr><td colspan="7" class="empty">' +
+      (state.benefit ? "上游未返回数据" : "点击「刷新额度」查询上游签到状态与余额") + '</td></tr>';
+    return;
+  }
+  let totalSum = 0, remainSum = 0;
+  body.innerHTML = results.map(r => {
+    const total = Number(r.total || 0), used = Number(r.used || 0), remain = Number(r.remain || 0);
+    totalSum += total; remainSum += remain;
+    const pct = total > 0 ? Math.round(remain / total * 100) : 0;
+    const color = pct > 50 ? "var(--ok)" : (pct > 20 ? "var(--warn)" : "var(--bad)");
+    const last = r.create_time ? fmtTime(new Date(r.create_time).toISOString()) : "从未领取";
+    const note = r.message ? '<div class="muted" style="font-size:11.5px">' + escapeHtml(r.message) + '</div>' : "";
+    return '<tr' + (r.ok ? '' : ' class="cool"') + '>' +
+      '<td class="mark" aria-hidden="true"><i></i></td>' +
+      '<td class="who"><div class="nm">' + escapeHtml(nameOf(r.uid)) + '</div>' +
+        '<div class="id" title="' + escapeHtml(r.uid) + '">' + escapeHtml(r.uid) + '</div>' + note + '</td>' +
+      '<td class="num">' + escapeHtml(last) + '</td>' +
+      '<td class="num">' + total.toLocaleString() + '</td>' +
+      '<td class="num muted">' + used.toLocaleString() + '</td>' +
+      '<td class="num" style="color:' + color + '">' + remain.toLocaleString() + '</td>' +
+      '<td><div class="bar"><i style="width:' + pct + '%;background:' + color + '"></i></div>' +
+        '<span class="num muted" style="font-size:11px">' + pct + '%</span></td></tr>';
+  }).join("");
+  $("benefitNote").textContent = "额度合计 " + totalSum.toLocaleString() + " · 剩余 " + remainSum.toLocaleString();
+}
+
+/* ── 渲染：模型 / 调度 / 日志 ─────────────────────────────────────── */
+function renderModels(models){
   $("modelCount").textContent = models.length + " 个";
   $("modelChips").innerHTML = models.length
-    ? models.map(m => `<span class="chip mono">${escapeHtml(m.id || m)}</span>`).join("")
-    : `<span class="muted">暂无模型</span>`;
-
-  const sch = data.schedule || {};
-  const chips = [];
-  if (sch.checkin_hours?.length) chips.push(`<span class="chip">签到 ${sch.checkin_hours.map(h=>String(h).padStart(2,"0")+":00").join(" / ")}</span>`);
-  if (sch.keepalive_hours?.length) chips.push(`<span class="chip">保活 ${sch.keepalive_hours.map(h=>String(h).padStart(2,"0")+":00").join(" / ")}</span>`);
-  $("schedChips").innerHTML = chips.join("") || `<span class="muted">未配置</span>`;
+    ? models.map(m => '<button class="chip" data-copy="' + escapeHtml(m.id) + '" title="点击复制模型 ID">' + escapeHtml(m.id) + '</button>').join("")
+    : '<span class="muted">暂无模型</span>';
+  $("baseUrl").textContent = location.origin + BASE + "/v1";
 }
 
-function escapeHtml(s){
-  return String(s??"").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]));
+function renderSchedule(watch){
+  const kv = $("schedKv");
+  if (!watch){ kv.innerHTML = '<div class="muted">未上报调度信息</div>'; return; }
+  const mins = (m) => (m === 0 || m === undefined || m === null) ? "—" : m + " 分钟";
+  const rows = [
+    ["后台巡检", watch.enabled ? "已开启" : "已关闭", watch.enabled ? "ok" : "warn"],
+    ["轮询间隔", mins(watch.poll_minutes), ""],
+    ["提前刷新窗口", mins(watch.refresh_skew_minutes), ""],
+    ["保活间隔", mins(watch.keepalive_interval), ""],
+    ["保活窗口", watch.keepalive_window || "—", ""],
+    ["单账号最大在途", watch.max_concurrent ?? "—", ""],
+  ];
+  kv.innerHTML = rows.map(([k, v, cls]) => {
+    const style = cls === "ok" ? ' style="color:var(--ok)"' : (cls === "warn" ? ' style="color:var(--warn)"' : "");
+    return '<div class="cell"><div class="k">' + escapeHtml(k) + '</div>' +
+      '<div class="v"' + style + '>' + escapeHtml(v) + '</div></div>';
+  }).join("");
 }
-function escapeAttr(s){ return escapeHtml(s).replace(/`/g,""); }
 
+function renderLog(){
+  const box = $("logBox");
+  const rows = state.log.filter(l => state.logFilter === "all" || l.ch === state.logFilter);
+  if (!rows.length){
+    box.innerHTML = '<span class="ln">暂无记录</span>';
+    return;
+  }
+  box.innerHTML = rows.slice().reverse().map(l =>
+    '<span class="ln' + (l.ch === "err" ? " e" : "") + '">' +
+    '<span class="ts">' + l.t.toLocaleTimeString() + '</span>' + escapeHtml(l.text) + '</span>').join("");
+}
+
+/* ── 数据加载 ─────────────────────────────────────────────────────── */
 async function loadOverview(){
-  const data = await api("/admin/api/overview");
-  render(data);
-  return data;
+  if (state.refreshing) return state.overview;
+  state.refreshing = true;
+  try {
+    const data = await api("/admin/api/overview");
+    state.overview = data;
+    state.accounts = data.accounts || [];
+    $("navBase").textContent = (data.region || "cn") + " · " + (location.host || "本地");
+    $("subMeta").textContent = "更新于 " + new Date().toLocaleTimeString();
+    renderAccounts();
+    renderModels(data.models || []);
+    renderSchedule((data.schedule || {}).watch);
+    if (state.benefit) renderBenefit();
+    return data;
+  } finally {
+    state.refreshing = false;
+  }
+}
+
+async function loadBenefit(silent){
+  try {
+    const data = await api("/admin/api/benefit/status");
+    state.benefit = data;
+    renderBenefit();
+    if (!silent) toast("额度已刷新");
+    logLine("op", "福利额度查询 · " + ((data.results || []).length) + " 个账号");
+  } catch (e){
+    toast(e.message, false);
+    logLine("err", "福利额度查询 · " + e.message);
+    if (e.status === 401) showLogin("密钥不正确，请重试。");
+  }
+}
+
+/* ── 视图切换与登录 ───────────────────────────────────────────────── */
+function switchView(v, skipHash){
+  if (!VIEW_TITLE[v]) v = "accounts";
+  state.view = v;
+  document.querySelectorAll(".nav a").forEach(a => a.classList.toggle("on", a.dataset.view === v));
+  document.querySelectorAll(".view").forEach(s => { s.hidden = s.id !== "view-" + v; });
+  $("ttl").textContent = VIEW_TITLE[v][0];
+  $("navSub").textContent = VIEW_TITLE[v][1];
+  if (!skipHash && location.hash.slice(1) !== v) location.hash = v;
+  if (v === "log") renderLog();
+  if (v === "benefit" && !state.benefit) loadBenefit(true);
+}
+
+function showLogin(err){
+  $("appView").classList.add("hidden");
+  $("loginView").classList.remove("hidden");
+  $("keyInput").value = getKey();
+  if (err){ $("loginErr").textContent = err; $("loginErr").hidden = false; }
+  $("keyInput").focus();
 }
 
 async function showApp(){
   $("loginView").classList.add("hidden");
   $("appView").classList.remove("hidden");
+  $("loginErr").hidden = true;
   try {
     await loadOverview();
-    // 后台拉一次福利额度（不阻塞首屏）
-    api("/admin/api/benefit/status").then(d => { if (d.results) renderBenefit(d.results); }).catch(() => {});
-    // 自动刷新：有账号冷却中时每 15s 刷新一次面板，冷却到期自动恢复
-    setInterval(async () => {
-      try {
-        const d = await api("/admin/api/overview");
-        const cooling = (d.accounts||[]).some(a => a.cooling && !a.disabled);
-        if (cooling) render(d);
-      } catch {}
-    }, 15000);
-  } catch (e) {
-    toast("登录失败: " + e.message, false);
+    switchView(location.hash.slice(1) || "accounts", true);
+  } catch (e){
     clearKey();
-    showLogin();
+    showLogin(e.status === 401 ? "需要 API Key：" + e.message : e.message);
   }
-}
-function showLogin(){
-  $("appView").classList.add("hidden");
-  $("loginView").classList.remove("hidden");
-  $("keyInput").value = getKey();
-  $("keyInput").focus();
 }
 
 $("loginBtn").onclick = async () => {
   const k = $("keyInput").value.trim();
-  if (!k){ toast("请输入 API Key", false); return; }
+  if (!k){ $("loginErr").textContent = "请输入 API Key"; $("loginErr").hidden = false; return; }
   setKey(k);
   await showApp();
 };
 $("keyInput").addEventListener("keydown", e => { if (e.key === "Enter") $("loginBtn").click(); });
-$("btnLogout").onclick = () => { clearKey(); showLogin(); toast("已退出"); };
+
+/* ── 主题与设置菜单 ─────────────────────────────────────────────── */
+/* data-theme 始终显式落地并指向四套板之一，不做系统跟随：
+   主题是这个面板里的显式选择，跟随系统会让同一台机器上的观感随 OS 设置漂移。 */
+const THEMES = [["graphite", "石墨"], ["midnight", "午夜"], ["light", "浅色"], ["sand", "暖沙"]];
+const THEME_IDS = THEMES.map(([id]) => id);
+function currentTheme(){
+  const t = localStorage.getItem(THEME_STORE);
+  return THEME_IDS.indexOf(t) >= 0 ? t : "graphite";
+}
+function syncTheme(){ document.documentElement.setAttribute("data-theme", currentTheme()); }
+function applyTheme(t){
+  if (THEME_IDS.indexOf(t) < 0) t = "graphite";
+  localStorage.setItem(THEME_STORE, t);
+  syncTheme();
+  renderThemeMenu();
+}
+function renderThemeMenu(){
+  const cur = currentTheme();
+  document.querySelectorAll("[data-theme-opt]").forEach(b => b.classList.toggle("on", b.dataset.themeOpt === cur));
+}
+function renderMenuKey(){
+  // 只报密钥是否存在，不回显任何字符。
+  $("menuKey").textContent = getKey() ? "API Key 已保存（仅本机浏览器）" : "未设置 API Key";
+}
+function openMenu(open){
+  $("settingsMenu").hidden = !open;
+  $("btnSettings").setAttribute("aria-expanded", String(open));
+  if (open){ renderThemeMenu(); renderMenuKey(); }
+}
+syncTheme();
+$("btnSettings").onclick = (e) => { e.stopPropagation(); openMenu($("settingsMenu").hidden); };
+$("settingsMenu").addEventListener("click", (e) => {
+  const b = e.target.closest("[data-theme-opt]");
+  if (!b) return;
+  applyTheme(b.dataset.themeOpt);
+  toast("主题：" + THEMES.find(([id]) => id === b.dataset.themeOpt)[1]);
+  openMenu(false);
+});
+document.addEventListener("click", (e) => { if (!e.target.closest(".menu-wrap")) openMenu(false); });
+document.addEventListener("keydown", (e) => { if (e.key === "Escape") openMenu(false); });
+$("btnLogout").onclick = () => {
+  clearKey();
+  openMenu(false);
+  state.benefit = null;
+  state.accounts = [];
+  logLine("op", "退出登录");
+  showLogin("已退出登录，请输入 API Key 重新进入。");
+};
+
+/* ── 顶栏与账号表动作 ─────────────────────────────────────────────── */
 $("btnRefresh").onclick = async () => {
-  try { await loadOverview(); toast("已刷新"); } catch(e){ toast(e.message,false); }
+  try { await loadOverview(); toast("已刷新"); logLine("op", "刷新总览"); }
+  catch (e){ toast(e.message, false); logLine("err", "刷新总览 · " + e.message); }
 };
-
-async function runAction(path, body){
-  try {
-    const data = await api(path, {method:"POST", body: body?JSON.stringify(body):"{}"});
-    const msg = data.message || (data.ok ? "完成" : "完成(有失败)");
-    toast(msg, !!data.ok);
-    await loadOverview();
-    return data;
-  } catch(e){
-    toast(e.message, false);
+$("btnCredits").onclick = () => action("/admin/api/credits", {}, "全员刷新状态");
+$("btnKeepaliveAll").onclick = () => action("/admin/api/keepalive", {}, "全员保活");
+$("btnReload").onclick = () => action("/admin/api/reload", {}, "重载 auths");
+$("btnModels").onclick = async () => {
+  try { await loadOverview(); toast("模型已更新"); }
+  catch (e){ toast(e.message, false); }
+};
+$("btnSchedRefresh").onclick = () => $("btnRefresh").click();
+$("btnBenefitRefresh").onclick = () => loadBenefit(false);
+$("btnCheckinAll").onclick = async () => {
+  const d = await action("/admin/api/checkin", {}, "全部领取福利");
+  if (d && d.results){
+    state.benefit = { results: d.results };
+    renderBenefit();
   }
-}
-
-$("btnCredits").onclick = () => runAction("/admin/api/credits", {});
-$("btnCheckin").onclick = async () => {
-  const data = await runAction("/admin/api/checkin", {});
-  if (data && data.results) renderBenefit(data.results);
-};
-$("btnKeepalive").onclick = () => runAction("/admin/api/keepalive", {});
-$("btnReload").onclick = () => runAction("/admin/api/reload", {});
-$("btnBenefitRefresh").onclick = async () => {
-  try {
-    const data = await api("/admin/api/benefit/status");
-    if (data.results) renderBenefit(data.results);
-    toast("额度已刷新");
-  } catch(e){ toast(e.message, false); }
 };
 
-function renderBenefit(results){
-  const body = $("benefitBody");
-  if (!results || !results.length){
-    body.innerHTML = `<tr><td colspan="6" class="empty">暂无数据</td></tr>`;
-    return;
-  }
-  body.innerHTML = results.map(r => {
-    const lastClaim = r.create_time ? new Date(r.create_time).toLocaleString() : "从未签到";
-    const total = Number(r.total||0).toLocaleString();
-    const used = Number(r.used||0).toLocaleString();
-    const remain = Number(r.remain||0).toLocaleString();
-    const pct = r.total > 0 ? Math.round(r.remain / r.total * 100) : 0;
-    const barColor = pct > 50 ? "var(--ok)" : (pct > 20 ? "var(--warn)" : "var(--bad)");
-    return `<tr>
-      <td><strong>${escapeHtml(shortUID(r.uid))}</strong></td>
-      <td class="muted">${escapeHtml(lastClaim)}</td>
-      <td><strong>${total}</strong></td>
-      <td class="muted">${used}</td>
-      <td><strong style="color:${barColor}">${remain}</strong></td>
-      <td>
-        <div style="display:flex;align-items:center;gap:6px">
-          <div style="flex:1;height:6px;background:rgba(100,116,139,.18);border-radius:99px;overflow:hidden">
-            <div style="width:${pct}%;height:100%;background:${barColor};border-radius:99px"></div>
-          </div>
-          <span class="mono muted" style="font-size:11px">${pct}%</span>
-        </div>
-      </td>
-    </tr>`;
-  }).join("");
-}
-
-$("acctBody").addEventListener("click", async (e) => {
+$("accBody").addEventListener("click", async (e) => {
   const btn = e.target.closest("button[data-act]");
   if (!btn) return;
-  const act = btn.dataset.act;
-  const uid = btn.dataset.uid;
+  const act = btn.dataset.act, uid = btn.dataset.uid, label = nameOf(uid);
   btn.disabled = true;
   try {
-    if (act === "credits") await runAction("/admin/api/credits", {uid});
-    else if (act === "checkin") {
-      const data = await runAction("/admin/api/checkin", {uid});
-      if (data && data.results) renderBenefit(data.results);
-    }
-    else if (act === "enable") await runAction("/admin/api/accounts/enable", {uid});
-    else if (act === "disable") await runAction("/admin/api/accounts/disable", {uid, reason:"manual disable from panel"});
+    if (act === "credits") await action("/admin/api/credits", { uid }, label + " 刷新状态");
+    else if (act === "keepalive") await action("/admin/api/keepalive", { uid }, label + " 保活");
+    else if (act === "enable") await action("/admin/api/accounts/enable", { uid }, label + " 启用");
+    else if (act === "disable") await action("/admin/api/accounts/disable", { uid, reason: "manual disable from panel" }, label + " 禁用");
   } finally {
     btn.disabled = false;
   }
 });
 
-/* ---------- OAuth 授权登录 ---------- */
-let oauthSessionId = "";
-let oauthTimer = null;
-let oauthBusy = false;
+$("modelChips").addEventListener("click", async (e) => {
+  const chip = e.target.closest("button[data-copy]");
+  if (!chip) return;
+  const id = chip.dataset.copy;
+  try { await navigator.clipboard.writeText(id); toast("已复制 " + id); }
+  catch { toast("复制失败：" + id, false); }
+});
 
-function setOAuthStatus(html, ok){
-  const el = $("oauthStatus");
+document.querySelectorAll(".nav a").forEach(a => {
+  a.onclick = (e) => { e.preventDefault(); switchView(a.dataset.view); };
+});
+window.addEventListener("hashchange", () => switchView(location.hash.slice(1), true));
+
+$("logChips").addEventListener("click", (e) => {
+  const chip = e.target.closest(".chip[data-ch]");
+  if (!chip) return;
+  state.logFilter = chip.dataset.ch;
+  $("logChips").querySelectorAll(".chip").forEach(c => c.classList.toggle("on", c === chip));
+  renderLog();
+});
+$("btnLogClear").onclick = () => { state.log = []; renderLog(); };
+
+/* 唯一的定时拉取：有账号冷却中时才每 15s 补一次读数，冷却到期自动回到可用态。 */
+setInterval(async () => {
+  if (!state.accounts.some(a => a.cooling && !a.disabled)) return;
+  try { await loadOverview(); } catch {}
+}, 15000);
+
+/* ── 授权登录 ────────────────────────────────────────────────────── */
+function oauthStatus(html, kind){
+  const el = $("addPoll");
+  el.hidden = false;
   el.innerHTML = html;
-  el.style.color = ok === false ? "var(--bad)" : (ok === true ? "var(--ok)" : "var(--muted)");
+  el.className = "state" + (kind === false ? " err" : (kind === true ? " ok" : ""));
 }
-function stopOAuthPoll(){
-  if (oauthTimer){ clearInterval(oauthTimer); oauthTimer = null; }
+function stopPoll(){
+  if (state.oauth.timer){ clearInterval(state.oauth.timer); state.oauth.timer = null; }
 }
-function openOAuthModal(){
-  $("oauthModal").classList.remove("hidden");
-  oauthSessionId = "";
-  stopOAuthPoll();
-  $("oauthUrl").textContent = "（发起后显示）";
-  $("oauthCallbackUrl").value = "";
-  $("oauthCopy").disabled = true;
-  $("oauthOpen").disabled = true;
-  $("oauthImport").disabled = true;
-  $("oauthPoll").disabled = true;
-  setOAuthStatus("点击「发起授权」开始", null);
+function openOauth(){
+  $("oauthVeil").classList.add("on");
+  state.oauth.id = "";
+  stopPoll();
+  $("addUrl").textContent = "（发起后显示）";
+  $("addCallbackUrl").value = "";
+  $("addLoad").hidden = true;
+  $("addReady").hidden = true;
+  $("addDone").hidden = true;
+  $("addErr").hidden = true;
+  $("addImportWrap").hidden = true;
+  $("btnCopyUrl").hidden = true;
+  $("btnOpenUrl").hidden = true;
+  $("btnImportCallback").hidden = true;
+  $("btnStartLogin").disabled = false;
 }
-function closeOAuthModal(){
-  stopOAuthPoll();
-  oauthSessionId = "";
-  $("oauthModal").classList.add("hidden");
+function closeOauth(){
+  stopPoll();
+  state.oauth.id = "";
+  $("oauthVeil").classList.remove("on");
 }
-
-async function startOAuth(){
-  if (oauthBusy) return;
-  oauthBusy = true;
-  $("oauthStart").disabled = true;
-  setOAuthStatus('<span class="spin"></span>正在向服务端申请授权链接…', null);
+async function startOauth(){
+  if (state.oauth.busy) return;
+  state.oauth.busy = true;
+  $("btnStartLogin").disabled = true;
+  $("addLoad").hidden = false;
+  $("addErr").hidden = true;
   try {
-    const data = await api("/admin/api/oauth/start", {method:"POST", body:"{}"});
-    if (!data.ok || !data.auth_url) throw new Error(data.message || "发起失败");
-    oauthSessionId = data.session_id;
-    $("oauthUrl").textContent = data.auth_url;
-    $("oauthCopy").disabled = false;
-    $("oauthOpen").disabled = false;
-    $("oauthImport").disabled = false;
-    $("oauthPoll").disabled = false;
-    setOAuthStatus("已生成链接，请打开授权页完成登录。正在自动检测…", null);
-    // 自动打开
-    try { window.open(data.auth_url, "_blank", "noopener,noreferrer"); } catch {}
-    stopOAuthPoll();
-    oauthTimer = setInterval(() => pollOAuth(true), 2500);
-    // 立即 poll 一次（通常还是 pending）
-    setTimeout(() => pollOAuth(true), 800);
-  } catch (e) {
-    setOAuthStatus("发起失败: " + e.message, false);
-    toast(e.message, false);
+    const d = await api("/admin/api/oauth/start", { method: "POST", body: "{}" });
+    if (!d.ok || !d.auth_url) throw new Error(d.message || "发起失败");
+    state.oauth.id = d.session_id;
+    $("addReady").hidden = false;
+    $("addUrl").textContent = d.auth_url;
+    $("btnCopyUrl").hidden = false;
+    $("btnOpenUrl").hidden = false;
+    $("btnImportCallback").hidden = false;
+    $("addImportWrap").hidden = false;
+    oauthStatus('<span class="spin"></span>已生成链接，请在浏览器完成登录，正在自动检测…', null);
+    logLine("op", "授权登录 · 已生成授权链接");
+    try { window.open(d.auth_url, "_blank", "noopener,noreferrer"); } catch {}
+    stopPoll();
+    state.oauth.timer = setInterval(() => pollOauth(true), 2500);
+  } catch (e){
+    $("addErr").textContent = "发起失败：" + e.message;
+    $("addErr").hidden = false;
+    logLine("err", "授权登录 · " + e.message);
   } finally {
-    oauthBusy = false;
-    $("oauthStart").disabled = false;
+    $("addLoad").hidden = true;
+    state.oauth.busy = false;
+    $("btnStartLogin").disabled = false;
   }
 }
-
-async function importOAuthCallback(){
-  const callbackUrl = $("oauthCallbackUrl").value.trim();
-  if (!oauthSessionId || !callbackUrl) {
-    setOAuthStatus("请先发起授权，再粘贴浏览器地址栏中的完整 127.0.0.1 回调地址", false);
+async function importCallback(){
+  const url = $("addCallbackUrl").value.trim();
+  if (!state.oauth.id || !url){
+    $("addErr").textContent = "请先发起授权，再粘贴浏览器地址栏中的完整回调地址";
+    $("addErr").hidden = false;
     return;
   }
-  $("oauthImport").disabled = true;
-  setOAuthStatus('<span class="spin"></span>正在中转回调…', null);
+  $("btnImportCallback").disabled = true;
+  oauthStatus('<span class="spin"></span>正在中转回调…', null);
   try {
-    const data = await api("/admin/api/oauth/import-callback", {
-      method:"POST",
-      body: JSON.stringify({session_id: oauthSessionId, callback_url: callbackUrl})
+    const d = await api("/admin/api/oauth/import-callback", {
+      method: "POST",
+      body: JSON.stringify({ session_id: state.oauth.id, callback_url: url }),
     });
-    if (!data.ok) throw new Error(data.message || "回调中转失败");
-    $("oauthCallbackUrl").value = "";
-    setOAuthStatus(data.message || "回调已接收，继续等待授权结果…", null);
-    if (data.next_url) {
-      $("oauthUrl").textContent = data.next_url;
-      try { window.open(data.next_url, "_blank", "noopener,noreferrer"); } catch {}
+    if (!d.ok) throw new Error(d.message || "回调中转失败");
+    $("addCallbackUrl").value = "";
+    oauthStatus(d.next_url ? "回调已接收，继续等待授权结果…" : (d.message || "回调已接收"), null);
+    if (d.next_url){
+      $("addUrl").textContent = d.next_url;
+      try { window.open(d.next_url, "_blank", "noopener,noreferrer"); } catch {}
     }
-    setTimeout(() => pollOAuth(true), 500);
-  } catch (e) {
-    setOAuthStatus("回调中转失败: " + e.message, false);
-    toast(e.message, false);
+    setTimeout(() => pollOauth(true), 600);
+  } catch (e){
+    oauthStatus("回调中转失败：" + e.message, false);
+    logLine("err", "授权登录 · 回调中转 " + e.message);
   } finally {
-    $("oauthImport").disabled = false;
+    $("btnImportCallback").disabled = false;
   }
 }
-
-async function pollOAuth(silent){
-  if (!oauthSessionId || oauthBusy) return;
-  oauthBusy = true;
-  if (!silent) setOAuthStatus('<span class="spin"></span>正在确认授权结果…', null);
+async function pollOauth(silent){
+  if (!state.oauth.id || state.oauth.busy) return;
+  state.oauth.busy = true;
+  if (!silent) oauthStatus('<span class="spin"></span>正在确认授权结果…', null);
   try {
-    const data = await api("/admin/api/oauth/poll", {
-      method:"POST",
-      body: JSON.stringify({session_id: oauthSessionId})
+    const d = await api("/admin/api/oauth/poll", {
+      method: "POST",
+      body: JSON.stringify({ session_id: state.oauth.id }),
     });
-    if (data.status === "pending") {
-      setOAuthStatus('<span class="spin"></span>' + (data.message || "等待浏览器完成授权…"), null);
+    if (d.status === "pending"){
+      if (!silent) oauthStatus('<span class="spin"></span>' + (d.message || "等待浏览器完成授权…"), null);
       return;
     }
-    if (data.status === "done" && data.ok) {
-      stopOAuthPoll();
-      setOAuthStatus("✓ " + (data.message || "登录成功"), true);
-      toast(data.message || "登录成功");
-      oauthSessionId = "";
-      $("oauthPoll").disabled = true;
+    if (d.status === "done" && d.ok){
+      stopPoll();
+      state.oauth.id = "";
+      $("addPoll").hidden = true;
+      $("addDone").textContent = "✓ " + (d.message || "登录成功");
+      $("addDone").hidden = false;
+      toast(d.message || "登录成功");
+      logLine("op", "授权登录 · " + (d.message || "成功"));
       await loadOverview();
-      setTimeout(closeOAuthModal, 900);
+      setTimeout(closeOauth, 900);
       return;
     }
-    // error
-    stopOAuthPoll();
-    setOAuthStatus("✗ " + (data.message || "授权失败"), false);
-    toast(data.message || "授权失败", false);
-  } catch (e) {
-    if (!silent) {
-      setOAuthStatus("查询失败: " + e.message, false);
-      toast(e.message, false);
-    }
+    stopPoll();
+    oauthStatus("✗ " + (d.message || "授权失败"), false);
+    toast(d.message || "授权失败", false);
+    logLine("err", "授权登录 · " + (d.message || "失败"));
+  } catch (e){
+    if (!silent) oauthStatus("查询失败：" + e.message, false);
+    logLine("err", "授权登录 · 查询 " + e.message);
   } finally {
-    oauthBusy = false;
+    state.oauth.busy = false;
   }
 }
 
-$("btnAddAccount").onclick = openOAuthModal;
-$("btnAddAccount2").onclick = openOAuthModal;
-$("oauthClose").onclick = closeOAuthModal;
-$("oauthModal").addEventListener("click", (e) => { if (e.target === $("oauthModal")) closeOAuthModal(); });
-$("oauthStart").onclick = startOAuth;
-$("oauthPoll").onclick = () => pollOAuth(false);
-$("oauthImport").onclick = importOAuthCallback;
-$("oauthOpen").onclick = () => {
-  const u = $("oauthUrl").textContent.trim();
+$("btnAdd").onclick = openOauth;
+$("btnCloseAdd").onclick = closeOauth;
+$("oauthVeil").addEventListener("click", (e) => { if (e.target === $("oauthVeil")) closeOauth(); });
+$("btnStartLogin").onclick = startOauth;
+$("btnImportCallback").onclick = importCallback;
+$("btnOpenUrl").onclick = () => {
+  const u = $("addUrl").textContent.trim();
   if (u && u.startsWith("http")) window.open(u, "_blank", "noopener,noreferrer");
 };
-$("oauthCopy").onclick = async () => {
-  const u = $("oauthUrl").textContent.trim();
-  try {
-    await navigator.clipboard.writeText(u);
-    toast("已复制授权链接");
-  } catch {
-    // fallback
+$("btnCopyUrl").onclick = async () => {
+  const u = $("addUrl").textContent.trim();
+  try { await navigator.clipboard.writeText(u); toast("已复制授权链接"); }
+  catch {
     const ta = document.createElement("textarea");
     ta.value = u; document.body.appendChild(ta); ta.select();
-    try { document.execCommand("copy"); toast("已复制授权链接"); } catch(e){ toast("复制失败", false); }
+    try { document.execCommand("copy"); toast("已复制授权链接"); } catch { toast("复制失败", false); }
     ta.remove();
   }
 };
 
-// 经由 hub 反代时 hub 会自动注入服务 api_key，直接尝试加载；
-// 失败（如直连且未带 key）再回退到登录表单。
+/* 经 hub 反代时 hub 自动注入服务 api_key，直接尝试加载；失败再回退登录表单。 */
 showApp();
 </script>
 </body>

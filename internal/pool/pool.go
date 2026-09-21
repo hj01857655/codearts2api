@@ -223,7 +223,7 @@ func (p *Pool) Stats() (total, healthy, disabled, cooling int, credits int64) {
 		}
 		a.mu.Unlock()
 	}
-	credits = int64(healthy) // 面板「积分合计」位复用为健康数
+	credits = int64(healthy) // CodeArts 无积分概念，该返回值留给调用方作健康数使用
 	return
 }
 

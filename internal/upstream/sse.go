@@ -36,11 +36,14 @@ func (e *UpstreamError) Error() string {
 }
 
 // RawCompletion 聚合结果。
+// Usage 保留上游原样返回的 usage 对象（含 completion_tokens_details 等扩展字段），
+// 上游没给时为 nil——调用方自行决定是否用估算值兜底。
 type RawCompletion struct {
 	Content   string
 	Reasoning string
 	Finish    string
 	ToolCalls []ChatToolCall
+	Usage     map[string]any
 }
 
 // scanLine 处理一行 SSE：CodeArts 是逐行 data:（无空行分隔），
@@ -399,6 +402,8 @@ func AggregateRaw(r io.Reader) (*RawCompletion, error) {
 		finish  = "stop"
 		upErr   error
 		calls   = make(toolCallAccumulator)
+		// nativeUsage 上游原生 usage，非流式响应优先用它（比估算精确）。
+		nativeUsage map[string]any
 	)
 	var pendingEvent string
 	for {
@@ -411,6 +416,9 @@ func AggregateRaw(r io.Reader) (*RawCompletion, error) {
 			if json.Unmarshal([]byte(data), &payload) == nil {
 				delta, _ := deltaFromChunk(payload)
 				applyToolCallDeltas(delta, calls)
+				if u, hasUsage := payload["usage"].(map[string]any); hasUsage && len(u) > 0 {
+					nativeUsage = u
+				}
 			}
 			applyEvent(&content, &reason, &finish, &upErr, ev, data)
 		}
@@ -426,6 +434,7 @@ func AggregateRaw(r io.Reader) (*RawCompletion, error) {
 		Reasoning: reason.String(),
 		Finish:    finish,
 		ToolCalls: sortedToolCalls(calls),
+		Usage:     nativeUsage,
 	}, nil
 }
 
@@ -456,15 +465,36 @@ func Aggregate(r io.Reader, model string) (map[string]any, error) {
 
 // Stream 实时转换 SSE，保证至少一个 [DONE]。
 func Stream(w http.ResponseWriter, r io.Reader, model string) error {
-	return streamWithCapture(w, r, model, nil)
+	return streamWithCapture(w, r, model, StreamOptions{}, nil)
+}
+
+// StreamOptions 流式输出选项，对应 OpenAI 的 stream_options。
+type StreamOptions struct {
+	// IncludeUsage 为 true 时在 [DONE] 前补一个 choices 为空、带 usage 的终帧；
+	// 开启后每个增量 chunk 都会带 "usage": null（OpenAI 同行为）。
+	IncludeUsage bool
+	// EstimateUsage 上游整段没给 usage 时用于兜底估算（可为 nil）。
+	EstimateUsage func(*RawCompletion) map[string]int
 }
 
 // StreamCapture 同 Stream，正常结束时回调聚合结果。
-func StreamCapture(w http.ResponseWriter, r io.Reader, model string, onDone func(*RawCompletion)) error {
-	return streamWithCapture(w, r, model, onDone)
+func StreamCapture(w http.ResponseWriter, r io.Reader, model string, opts StreamOptions, onDone func(*RawCompletion)) error {
+	return streamWithCapture(w, r, model, opts, onDone)
 }
 
-func streamWithCapture(w http.ResponseWriter, r io.Reader, model string, onDone func(*RawCompletion)) error {
+// usageMap 把估算结果转成 JSON 友好的形态（值同为 int，但允许与原生 usage 同型共存）。
+func usageMap(m map[string]int) map[string]any {
+	if m == nil {
+		return nil
+	}
+	out := make(map[string]any, len(m))
+	for k, v := range m {
+		out[k] = v
+	}
+	return out
+}
+
+func streamWithCapture(w http.ResponseWriter, r io.Reader, model string, opts StreamOptions, onDone func(*RawCompletion)) error {
 	h := w.Header()
 	h.Set("Content-Type", "text/event-stream")
 	h.Set("Cache-Control", "no-cache")
@@ -481,6 +511,8 @@ func streamWithCapture(w http.ResponseWriter, r io.Reader, model string, onDone 
 		finish    = "stop"
 		streamErr error
 		calls     = make(toolCallAccumulator)
+		// nativeUsage 上游原生 usage（纯 usage 终帧或带 choices 的帧都可能携带）。
+		nativeUsage map[string]any
 	)
 	var pendingEvent string
 
@@ -495,6 +527,10 @@ func streamWithCapture(w http.ResponseWriter, r io.Reader, model string, onDone 
 			"created": time.Now().Unix(),
 			"model":   model,
 			"choices": []any{choice},
+		}
+		if opts.IncludeUsage {
+			// 开启 include_usage 后，增量帧的 usage 一律为 null，真值只在终帧给出。
+			chunk["usage"] = nil
 		}
 		raw, _ := json.Marshal(chunk)
 		if _, err := io.WriteString(w, "data: "+string(raw)+"\n\n"); err != nil {
@@ -526,6 +562,53 @@ func streamWithCapture(w http.ResponseWriter, r io.Reader, model string, onDone 
 		return nil
 	}
 
+	// snapshot 在任意时点把当前聚合状态打包成 RawCompletion。
+	snapshot := func() *RawCompletion {
+		return &RawCompletion{
+			Content:   unwrapQAContent(content.String()),
+			Reasoning: reason.String(),
+			Finish:    finish,
+			ToolCalls: sortedToolCalls(calls),
+			Usage:     nativeUsage,
+		}
+	}
+
+	// writeUsageChunk 发 OpenAI 约定的 usage 终帧：choices 为空数组、usage 带值。
+	// 上游没给原生 usage 时用估算值兜底；两者都没有则整帧 usage 为 null。
+	writeUsageChunk := func() error {
+		usage := nativeUsage
+		if usage == nil && opts.EstimateUsage != nil {
+			usage = usageMap(opts.EstimateUsage(snapshot()))
+		}
+		chunk := map[string]any{
+			"id":      id,
+			"object":  "chat.completion.chunk",
+			"created": time.Now().Unix(),
+			"model":   model,
+			"choices": []any{},
+			"usage":   usage,
+		}
+		raw, _ := json.Marshal(chunk)
+		if _, err := io.WriteString(w, "data: "+string(raw)+"\n\n"); err != nil {
+			return err
+		}
+		if fl != nil {
+			fl.Flush()
+		}
+		return nil
+	}
+
+	// finishStream 是正常收尾的唯一路径：先按需补 usage 终帧，再发 [DONE]。
+	// 出错路径不走这里——上游报错时不输出 usage，只给 error 事件。
+	finishStream := func() error {
+		if opts.IncludeUsage {
+			if werr := writeUsageChunk(); werr != nil {
+				return werr
+			}
+		}
+		return writeDONE()
+	}
+
 	for {
 		line, err := br.ReadString('\n')
 		if err != nil && err != io.EOF {
@@ -535,7 +618,7 @@ func streamWithCapture(w http.ResponseWriter, r io.Reader, model string, onDone 
 		if ev, data, ok := scanLine(strings.TrimRight(line, "\r\n"), &pendingEvent); ok {
 			if strings.TrimSpace(data) == "[DONE]" {
 				if !sawDone {
-					if werr := writeDONE(); werr != nil {
+					if werr := finishStream(); werr != nil {
 						streamErr = werr
 						break
 					}
@@ -545,6 +628,9 @@ func streamWithCapture(w http.ResponseWriter, r io.Reader, model string, onDone 
 			}
 			var payload map[string]any
 			_ = json.Unmarshal([]byte(data), &payload)
+			if u, ok := payload["usage"].(map[string]any); ok && len(u) > 0 {
+				nativeUsage = u
+			}
 			nativeDelta, nativeFinish := deltaFromChunk(payload)
 			applyToolCallDeltas(nativeDelta, calls)
 			var upErr error
@@ -589,7 +675,7 @@ func streamWithCapture(w http.ResponseWriter, r io.Reader, model string, onDone 
 						break
 					}
 				}
-				if werr := writeDONE(); werr != nil {
+				if werr := finishStream(); werr != nil {
 					streamErr = werr
 					break
 				}
@@ -604,15 +690,10 @@ func streamWithCapture(w http.ResponseWriter, r io.Reader, model string, onDone 
 		}
 	}
 	if streamErr == nil && !sawDone {
-		streamErr = writeDONE()
+		streamErr = finishStream()
 	}
 	if streamErr == nil && onDone != nil {
-		onDone(&RawCompletion{
-			Content:   unwrapQAContent(content.String()),
-			Reasoning: reason.String(),
-			Finish:    finish,
-			ToolCalls: sortedToolCalls(calls),
-		})
+		onDone(snapshot())
 	}
 	return streamErr
 }

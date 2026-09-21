@@ -137,6 +137,31 @@ func TestParseChatRequest(t *testing.T) {
 	}
 }
 
+func TestParseChatRequestStreamOptions(t *testing.T) {
+	const msgs = `"messages":[{"role":"user","content":"hi"}]`
+	for _, tc := range []struct {
+		name string
+		body string
+		want bool
+	}{
+		{"absent", `{"model":"m","stream":true,` + msgs + `}`, false},
+		{"true", `{"model":"m","stream":true,` + msgs + `,"stream_options":{"include_usage":true}}`, true},
+		{"false", `{"model":"m","stream":true,` + msgs + `,"stream_options":{"include_usage":false}}`, false},
+		{"null", `{"model":"m","stream":true,` + msgs + `,"stream_options":null}`, false},
+		{"empty_object", `{"model":"m","stream":true,` + msgs + `,"stream_options":{}}`, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			req, err := parseChatRequest([]byte(tc.body))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if req.IncludeUsage != tc.want {
+				t.Fatalf("IncludeUsage=%v want %v", req.IncludeUsage, tc.want)
+			}
+		})
+	}
+}
+
 func TestParseChatRequestErrors(t *testing.T) {
 	if _, err := parseChatRequest([]byte(`{}`)); err == nil {
 		t.Fatal("expected error for empty messages")

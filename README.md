@@ -1,7 +1,7 @@
 # CodeArts2API
 
 > 华为云 CodeArts Agent（盘古助手/码道）的 OpenAI 兼容代理。**无需运行 CodeArts Agent
-> 客户端**，纯 Go 直连华为云 API，多账号轮转 + token 自动续期 + WebUI。
+> 客户端**，纯 Go 直连华为云 API，多账号轮转 + token 自动续期 + Web 管理控制台。
 
 ## 参考项目
 
@@ -12,6 +12,8 @@
 - [qoderwork2api](https://github.com/Sliverkiss/qoderwork2api) — QoderWork CN OpenAI 兼容反代（OAuth 授权流程）
 
 感谢原作者的开源与优秀设计。
+
+本仓库是本项目在 GitHub 上的个人维护分支：[hj01857655/codearts2api](https://github.com/hj01857655/codearts2api)。
 
 ## 快速开始（Ubuntu / Linux）
 
@@ -40,7 +42,7 @@ export CA2A_API_KEY=你的随机密钥
 ./bin/codearts2api -config config.json
 ```
 
-### 验证 + WebUI
+### 验证 + 管理控制台
 
 ```bash
 curl http://127.0.0.1:7866/healthz
@@ -50,8 +52,54 @@ curl -X POST http://127.0.0.1:7866/v1/chat/completions \
   -d '{"model":"snap-chat","messages":[{"role":"user","content":"你好"}]}'
 ```
 
-浏览器打开 **http://127.0.0.1:7866/** 即 WebUI：账号/token 状态、对话测试（流式/非流式）。多轮上下文按账号自动续接（chat_id 分组）；也可用请求头
+浏览器打开 **http://127.0.0.1:7866/** 即管理控制台（面板经 `//go:embed` 打进二进制，无需单独部署前端）。
+多轮上下文按账号自动续接（chat_id 分组）；也可用请求头
 `X-Codearts-Chat-Id: <chatId>` 或 body 里 `conversation_id` 显式指定会话。
+
+### Web 控制台
+
+左侧导航分五个视图，顶栏右侧是动作区（刷新、设置菜单）：
+
+| 视图 | 内容 |
+|------|------|
+| 账号池 | 账号健康色条与状态（可用/冷却/禁用）、token 剩余、在途会话、故障计数与原因；逐账号刷新状态 / 保活 / 启用 / 禁用，以及全员刷新、全员保活、重载 auths。**授权登录**在表头右上角 |
+| 福利额度 | 各账号限时福利签到时间、总额度 / 已用 / 剩余与占比；支持刷新额度、全部领取 |
+| 模型 | 当前可用模型（已过滤探测判定不可用的条目），点击标签复制模型 ID；下方是接入地址 |
+| 调度 | 后台巡检与保活参数回显（轮询间隔、提前刷新窗口、保活间隔与窗口、单账号最大在途） |
+| 操作记录 | 本页发出的动作与结果流水，可筛操作 / 错误 |
+
+- **登录**：默认直接尝试加载（经反向代理并注入 `api_key` 时无需手填）；直连且未带 key 时回退到密钥表单，密钥只存本机浏览器 `localStorage`，请求以 `Authorization: Bearer` 发送。设置菜单里的**退出登录**会清除本地密钥并回到表单。
+- **主题**：明暗共四套色板（石墨、午夜、浅色、暖沙），在设置菜单里切换，选择存在浏览器本地；所有文字与状态色都按 WCAG AA（正文 4.5:1）取值。
+- **授权登录**：点「＋ 授权登录」获取链接，浏览器完成华为云登录后账号自动落盘并载入账号池，无需重启；部分浏览器会停在 `127.0.0.1` 回调，此时把地址栏完整地址粘贴进弹窗的「远程浏览器回调中转」即可。
+- **冷却**：只按时间自动恢复，面板没有手动清除按钮；有账号冷却时面板会定期补一次读数，到期自动回到可用态。
+
+### 跨域与单模型查询
+
+所有响应都带 `Access-Control-Allow-Origin: *`，`OPTIONS` 预检直接返回 `204`，
+浏览器端前端可直连（密钥经 `Authorization: Bearer` 传入）。除 `/v1/models` 列表外，
+还提供 `GET /v1/models/{id}` 返回单个模型详情——部分客户端会逐个查模型。
+
+### 磁盘缓存
+
+模型目录与多轮会话映射会在成功获取后落盘（`state_file + ".models.json"` /
+`state_file + ".chats.json"`，即 `data/state.json.models.json` 与 `data/state.json.chats.json`），
+启动时优先加载，避免重启后首请求重新发现模型、丢失会话续接。
+
+### token 用量（usage）
+
+非流式响应始终带 `usage`：**优先透传上游原生值**（含 `completion_tokens_details`
+等扩展字段原样保留），上游未提供时才按文本长度估算——估算值不是精确 token 计数。
+
+流式默认不返回 usage。需要用量时显式开启：
+
+```jsonc
+"stream_options": { "include_usage": true }
+```
+
+开启后在 `[DONE]` 前会多一个 `choices: []`、`usage` 带值的终帧（OpenAI 同约定），
+其余增量 chunk 的 `usage` 均为 `null`；上游整段没给 usage 时该终帧用估算值兜底。
+`stream_options` 未传、传 `null`、或 `include_usage: false` 均不返回 usage。
+上游报错时只发 `event: error`，不发 usage。
 
 ### 模型列表与限时福利
 
@@ -138,23 +186,28 @@ docker compose up -d --build
 | `CA2A_WATCH_KEEPALIVE_INTERVAL` | 保活间隔（分钟） | `15` |
 | `CA2A_MAX_CONCURRENT` | 单账号最大并发 | `5` |
 | `CA2A_KEEPALIVE_WINDOW` | 保活窗口 | `10m` |
+| `CA2A_QUEUE_RETRY_SECONDS` | 上游并发/TPM 排队时的重试间隔（秒） | `10` |
+| `CA2A_QUEUE_MAX_ATTEMPTS` | 排队重试次数上限（约 5 分钟） | `30` |
 | `CA2A_BENEFIT_AUTO_CLAIM` | 发现模型时自动领取限时福利（幂等；关闭则福利模型不可用） | `true` |
-| `CA2A_LOGIN_CLIENT_ID` | WebUI 登录使用的 OAuth client_id | 已有账号的取值，否则 `codearts-agent` |
+| `CA2A_LOGIN_CLIENT_ID` | 控制台授权登录使用的 OAuth client_id | 已有账号的取值，否则 `codearts-agent` |
 
 ## 目录结构
 
 ```
 cmd/server/        HTTP 服务（config + main）
 cmd/login/         华为云 OAuth2 PKCE 登录
-cmd/credit/        账号登录态日报（新增并发信息）
+cmd/credit/        账号登录态日报（含并发信息）
 cmd/apply/         批量 token 续期（使用 pool 包）
 cmd/models/        查看账号可用模型（内置 + 限时福利，可选 -claim 领取）
+cmd/benefit/       限时福利签到与余额查询
+cmd/probe/         模型可用性探测
+cmd/chatdebug/     上游对话调试
 internal/auth/     auth 文件读写
 internal/upstream/ 云端客户端（登录/聊天/SSE/模型发现）+ 逆向常量
 internal/pool/     账号池（token 校验/自动刷新/冷却/并发控制）
-internal/scheduler/ token 续期看门狗（新增保活机制）
-internal/server/   OpenAI 兼容路由
-internal/webui/    内嵌 WebUI 控制台
+internal/scheduler/ token 续期看门狗（含保活机制）
+internal/server/   OpenAI 兼容路由 + 管理控制台
+                   panel.html / panel.go（内嵌面板）、admin.go（面板 API）、oauth.go（授权登录）
 deploy/            systemd unit 样例
 docs/              逆向过程与接口清单
 ```

@@ -41,13 +41,16 @@ type chatRequest struct {
 	Model           string
 	Stream          bool
 	ReasoningEffort string
-	MaxTokens       *int
-	Temperature     *float64
-	TopP            *float64
-	Messages        []openAIMessage
-	Tools           []map[string]any
-	ToolChoice      toolChoiceOpenAI
-	ConversationID  string
+	// IncludeUsage 对应 stream_options.include_usage：开启后在 [DONE] 前补一个
+	// 带 usage 的终帧。未传 / 传 null / 传 false 均不开。
+	IncludeUsage   bool
+	MaxTokens      *int
+	Temperature    *float64
+	TopP           *float64
+	Messages       []openAIMessage
+	Tools          []map[string]any
+	ToolChoice     toolChoiceOpenAI
+	ConversationID string
 }
 
 // parseChatRequest 解析并校验请求体。
@@ -64,6 +67,11 @@ func parseChatRequest(body []byte) (*chatRequest, error) {
 		Messages            []json.RawMessage `json:"messages"`
 		Tools               []map[string]any  `json:"tools"`
 		ToolChoice          json.RawMessage   `json:"tool_choice"`
+		// StreamOptions 指针：既能区分「未传」与「传了但 include_usage 为 false」，
+		// 也能接受显式的 null（与未传同义）。
+		StreamOptions *struct {
+			IncludeUsage bool `json:"include_usage"`
+		} `json:"stream_options"`
 	}
 	if err := json.Unmarshal(body, &raw); err != nil {
 		return nil, fmt.Errorf("parse request: %w", err)
@@ -75,6 +83,7 @@ func parseChatRequest(body []byte) (*chatRequest, error) {
 		Model:           raw.Model,
 		Stream:          raw.Stream,
 		ReasoningEffort: strings.ToLower(strings.TrimSpace(raw.ReasoningEffort)),
+		IncludeUsage:    raw.StreamOptions != nil && raw.StreamOptions.IncludeUsage,
 		MaxTokens:       raw.MaxTokens,
 		Temperature:     raw.Temperature,
 		TopP:            raw.TopP,
