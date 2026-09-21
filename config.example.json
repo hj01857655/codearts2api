@@ -16,7 +16,7 @@
   "benefit_auto_claim": true,    // 模型发现时自动领取限时福利（幂等；关闭则福利模型调用必然失败）
   "update_repo": "hj01857655/codearts2api",  // 控制台「检测更新」使用的 GitHub 仓库；留空则关闭在线更新
   // "login_client_id": "codearts-agent",  // WebUI 登录用 OAuth client；留空自动沿用已有账号的取值
-  "max_concurrent": 5,           // 单账号最大并发数（默认 5）
+  "max_concurrent": 5,           // 单账号最大并发数（代码内置默认 1；这里显式放宽到 5）
   "keepalive_window": "10m",     // 保活心跳窗口，超过此时间无活动则发送心跳（默认 10m）
   "watch": {
     "enabled": true,

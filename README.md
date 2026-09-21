@@ -140,13 +140,13 @@ curl -X POST http://127.0.0.1:7866/v1/chat/completions \
 | `CA2A_LISTEN` | 监听地址 | `:7866` |
 | `CA2A_AUTH_DIR` | 凭证目录 | `./auths` |
 | `CA2A_STATE_FILE` | 状态文件 | `./data/state.json` |
-| `CA2A_DEFAULT_MODEL` | 默认模型 | 见 `config.json` |
+| `CA2A_DEFAULT_MODEL` | 默认模型 | `glm-5.2`（`config.example.json` 里给的是 `snap-chat`） |
 | `CA2A_OAUTH_CALLBACK_HOST` | OAuth 回调主机 | - |
 | `CA2A_WATCH_ENABLED` | 调度器开关 | `true` |
 | `CA2A_WATCH_POLL_MINUTES` | 轮询间隔（分钟） | `30` |
 | `CA2A_WATCH_REFRESH_SKEW` | 提前刷新时间（分钟） | `30` |
 | `CA2A_WATCH_KEEPALIVE_INTERVAL` | 保活间隔（分钟） | `15` |
-| `CA2A_MAX_CONCURRENT` | 单账号最大并发 | `5` |
+| `CA2A_MAX_CONCURRENT` | 单账号最大并发 | `1`（串行最稳；示例配置里为 `5`） |
 | `CA2A_KEEPALIVE_WINDOW` | 保活窗口 | `10m` |
 | `CA2A_QUEUE_RETRY_SECONDS` | 上游并发/TPM 排队时的重试间隔（秒） | `10` |
 | `CA2A_QUEUE_MAX_ATTEMPTS` | 排队重试次数上限（约 5 分钟） | `30` |
@@ -178,16 +178,17 @@ curl -X POST http://127.0.0.1:7866/v1/chat/completions \
 
 ## API
 
-除 `GET /healthz` 与面板页面外，所有端点都要求 `Authorization: Bearer <api_key>`。
+除免鉴权端点（`GET /healthz`、面板页面 `/` `/admin` `/panel` `/panel/`、
+`GET /oauth/callback`）外，其余端点都要求 `Authorization: Bearer <api_key>`。
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
 | `POST` | `/v1/chat/completions` | OpenAI 兼容对话（`stream` 可选） |
 | `GET` | `/v1/models` | 可用模型列表（含限时福利标记） |
 | `GET` | `/v1/models/{id}` | 单个模型详情 |
-| `GET` | `/healthz` | 健康检查（无可用账号时 503） |
+| `GET` | `/healthz` | 健康检查（无可用账号时 503，免鉴权） |
 | `GET` | `/status` | 账号池与版本状态 |
-| `GET` | `/` `/admin` `/panel` | 管理控制台页面 |
+| `GET` | `/` `/admin` `/panel` `/panel/` | 管理控制台页面（免鉴权） |
 | `GET` | `/admin/api/overview` | 控制台总览 |
 | `POST` | `/admin/api/credits` | 刷新额度读数 |
 | `POST` | `/admin/api/checkin` | 限时福利签到 |
@@ -196,7 +197,7 @@ curl -X POST http://127.0.0.1:7866/v1/chat/completions \
 | `POST` | `/admin/api/reload` | 重载 `auths/` 目录 |
 | `POST` | `/admin/api/accounts/enable` `/disable` `/clear-cooldown` | 账号启用 / 禁用 / 清冷却 |
 | `POST` | `/admin/api/oauth/start` `/poll` `/import-callback` | 控制台授权登录 |
-| `GET` | `/oauth/callback` | OAuth 回调 |
+| `GET` | `/oauth/callback` | OAuth 回调（免鉴权） |
 | `GET` | `/admin/api/update/check` | 检测新版本 |
 | `POST` | `/admin/api/update/apply` `/rollback` `/restart` | 升级 / 回滚 / 重启 |
 
