@@ -356,6 +356,28 @@ func summaryMsg(action string, results []actionResult) string {
 	return action + "完成: " + itoa(ok) + " 成功 / " + itoa(fail) + " 失败"
 }
 
+// adminModelsRefresh 强制重发现模型目录（POST /admin/api/models/refresh）。
+//
+// 面板「重新获取」原先只是重读一次 overview，而 /v1/models 有 1h 内存缓存 +
+// 账号目录各 1h TTL，用户刚领完福利再点也看不到新模型——按钮名不副实。
+// 这里绕过两层缓存直打上游，并回写磁盘缓存，使结果对 /v1/models 立即生效。
+func (h *Handler) adminModelsRefresh(w http.ResponseWriter, r *http.Request) {
+	infos := h.refreshDynamicModels()
+	if len(infos) == 0 {
+		writeJSON(w, http.StatusOK, map[string]any{
+			"ok": false, "message": "模型发现失败，已沿用旧列表（可能是上游不可达或账号不可用）",
+		})
+		return
+	}
+	ids := make([]map[string]any, 0, len(infos))
+	for _, m := range infos {
+		ids = append(ids, map[string]any{"id": m.ID})
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"ok": true, "message": "已重新发现 " + itoa(len(infos)) + " 个模型", "models": ids,
+	})
+}
+
 func itoa(n int) string {
 	if n == 0 {
 		return "0"

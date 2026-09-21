@@ -1029,8 +1029,23 @@ $("btnCredits").onclick = () => action("/admin/api/credits", {}, "全员刷新�
 $("btnKeepaliveAll").onclick = () => action("/admin/api/keepalive", {}, "全员保活");
 $("btnReload").onclick = () => action("/admin/api/reload", {}, "重载 auths");
 $("btnModels").onclick = async () => {
-  try { await loadOverview(); toast("模型已更新"); }
-  catch (e){ toast(e.message, false); }
+  // 后端 /v1/models 有 1h 缓存，必须打 models/refresh 才能真重发现；
+  // 仅重读 overview 会拿到旧列表，按钮名不副实。
+  const btn = $("btnModels");
+  btn.disabled = true;
+  const label = btn.textContent;
+  btn.textContent = "获取中…";
+  try {
+    const d = await api("/admin/api/models/refresh", { method: "POST", body: "{}" });
+    await loadOverview();
+    toast((d && d.message) || "模型已更新", !(d && d.ok === false));
+  } catch (e){
+    toast(e.message, false);
+    if (e.status === 401) showLogin("密钥不正确，请重试。");
+  } finally {
+    btn.disabled = false;
+    btn.textContent = label;
+  }
 };
 $("btnSchedRefresh").onclick = () => $("btnRefresh").click();
 $("btnBenefitRefresh").onclick = () => loadBenefit(false);

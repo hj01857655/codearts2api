@@ -152,6 +152,17 @@ func New(timeout time.Duration) *Client {
 
 // NewWithChatEndpoint 构造指向自定义 chat-completions 端点的客户端。
 // 主要用于端到端测试：仅替换外部 CodeArts HTTP 边界，其余请求链保持真实。
+// SetModelHostsForTest 覆盖模型发现用的上游主机。仅供测试注入 httptest 地址；
+// 空字符串表示保持默认，生产代码不调用。
+func (c *Client) SetModelHostsForTest(snapBase, benefitBase string) {
+	if snapBase != "" {
+		c.snapBase = snapBase
+	}
+	if benefitBase != "" {
+		c.benefitBase = benefitBase
+	}
+}
+
 func NewWithChatEndpoint(timeout time.Duration, endpoint string) *Client {
 	c := New(timeout)
 	if strings.TrimSpace(endpoint) != "" {
@@ -168,7 +179,7 @@ func (c *Client) chatEndpoint() string {
 	return c.snapURL(EpChatV2)
 }
 
-// SetBenefitAutoClaim 设置模型发现时是否自动领取限时福利（默认 false）。
+// SetBenefitAutoClaim 设置模型发现时是否自动领取限时福利（New 里默认开启）。
 // 关闭时 /v1/models 只读不写，需要领取请显式调用 ClaimBenefit（cmd/models -claim）。
 func (c *Client) SetBenefitAutoClaim(v bool) { c.claimAuto.Store(v) }
 

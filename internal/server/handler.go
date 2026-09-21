@@ -230,6 +230,7 @@ func NewHandler(cfg Config) *Handler {
 	h.mux.HandleFunc("POST /admin/api/credits", h.withAuth(h.adminCredits))
 	h.mux.HandleFunc("POST /admin/api/checkin", h.withAuth(h.adminCheckin))
 	h.mux.HandleFunc("GET /admin/api/benefit/status", h.withAuth(h.adminBenefitStatus))
+	h.mux.HandleFunc("POST /admin/api/models/refresh", h.withAuth(h.adminModelsRefresh))
 	h.mux.HandleFunc("POST /admin/api/keepalive", h.withAuth(h.adminKeepalive))
 	h.mux.HandleFunc("POST /admin/api/reload", h.withAuth(h.adminReload))
 	h.mux.HandleFunc("GET /admin/api/update/check", h.withAuth(h.adminUpdateCheck))
@@ -646,25 +647,39 @@ func modelEntries(infos []upstream.ModelInfo) []map[string]any {
 // 目录按账号存放（限时福利按账号授予，账号之间不能互相污染），因此这里逐个健康
 // 账号发现并写入其目录；发现失败的账号沿用旧目录或冷启动种子。
 func (h *Handler) fetchDynamicModels() []upstream.ModelInfo {
-	dynamicModelsCache.RLock()
-	if len(dynamicModelsCache.ids) > 0 && time.Since(dynamicModelsCache.fetched) < dynamicModelsTTL {
-		out := dynamicModelsCache.ids
+	return h.discoverModels(false)
+}
+
+// refreshDynamicModels 供面板「重新获取」使用的强制重发现：跳过内存缓存、
+// 账号目录 TTL 与失败负缓存，重打一次上游——用户按按钮就是要看当前真相，
+// 不能拿 1h 前的缓存糊弄。
+func (h *Handler) refreshDynamicModels() []upstream.ModelInfo {
+	return h.discoverModels(true)
+}
+
+// discoverModels 是模型发现的唯一实现；reload 决定是否绕过两层缓存。
+func (h *Handler) discoverModels(reload bool) []upstream.ModelInfo {
+	if !reload {
+		dynamicModelsCache.RLock()
+		if len(dynamicModelsCache.ids) > 0 && time.Since(dynamicModelsCache.fetched) < dynamicModelsTTL {
+			out := dynamicModelsCache.ids
+			dynamicModelsCache.RUnlock()
+			return out
+		}
+		// 失败负缓存：冷却期内不再请求上游。
+		if !dynamicModelsCache.lastFail.IsZero() && time.Since(dynamicModelsCache.lastFail) < modelsFetchFailCooldown {
+			dynamicModelsCache.RUnlock()
+			return nil
+		}
 		dynamicModelsCache.RUnlock()
-		return out
 	}
-	// 失败负缓存：冷却期内不再请求上游。
-	if !dynamicModelsCache.lastFail.IsZero() && time.Since(dynamicModelsCache.lastFail) < modelsFetchFailCooldown {
-		dynamicModelsCache.RUnlock()
-		return nil
-	}
-	dynamicModelsCache.RUnlock()
 
 	var sets [][]upstream.ModelInfo
 	for _, acct := range h.cfg.Pool.Accounts() {
 		if acct.Auth == nil || !h.cfg.Pool.Healthy(acct.Name) {
 			continue
 		}
-		if !upstream.AccountCatalogStale(acct.UID) {
+		if !reload && !upstream.AccountCatalogStale(acct.UID) {
 			if infos, ok := upstream.AccountModels(acct.UID); ok {
 				sets = append(sets, infos)
 				continue

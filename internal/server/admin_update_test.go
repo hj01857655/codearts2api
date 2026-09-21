@@ -33,7 +33,7 @@ func newUpdateTestHandler(t *testing.T, version, updateRepo string) *Handler {
 	})
 }
 
-// 更新端点必须鉴权：匿名可触发等于给了远程替换二进制的入口。
+// 更新与重发现端点必须鉴权：匿名可触发等于给了远程替换二进制 / 刷上游的入口。
 func TestUpdateEndpointsRequireAuth(t *testing.T) {
 	h := newUpdateTestHandler(t, "v1.0.0", "test/repo")
 	for _, tc := range []struct{ method, path string }{
@@ -41,6 +41,7 @@ func TestUpdateEndpointsRequireAuth(t *testing.T) {
 		{http.MethodPost, "/admin/api/update/apply"},
 		{http.MethodPost, "/admin/api/update/rollback"},
 		{http.MethodPost, "/admin/api/update/restart"},
+		{http.MethodPost, "/admin/api/models/refresh"},
 	} {
 		req := httptest.NewRequest(tc.method, tc.path, strings.NewReader("{}"))
 		rec := httptest.NewRecorder()
