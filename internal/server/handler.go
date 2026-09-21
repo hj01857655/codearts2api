@@ -165,6 +165,7 @@ func NewHandler(cfg Config) *Handler {
 	h.mux.HandleFunc("GET /admin/api/overview", h.withAuth(h.adminOverview))
 	h.mux.HandleFunc("POST /admin/api/credits", h.withAuth(h.adminCredits))
 	h.mux.HandleFunc("POST /admin/api/checkin", h.withAuth(h.adminCheckin))
+	h.mux.HandleFunc("GET /admin/api/benefit/status", h.withAuth(h.adminBenefitStatus))
 	h.mux.HandleFunc("POST /admin/api/keepalive", h.withAuth(h.adminKeepalive))
 	h.mux.HandleFunc("POST /admin/api/reload", h.withAuth(h.adminReload))
 	h.mux.HandleFunc("POST /admin/api/accounts/enable", h.withAuth(h.adminEnable))

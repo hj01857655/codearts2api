@@ -509,6 +509,86 @@ func (c *Client) ClaimBenefit(cred SignCredential) error {
 	return nil
 }
 
+// BenefitStatus 签到状态（GET /api/v1/benefit/claim）。
+// 返回上次签到时间（毫秒时间戳）；从未签到时 create_time 为 0。
+func (c *Client) BenefitStatus(cred SignCredential) (createTime int64, err error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.benefitURL(EpBenefitClaim), nil)
+	if err != nil {
+		return 0, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Language", "zh-cn")
+	if cred.SecurityToken != "" {
+		req.Header.Set("X-Security-Token", cred.SecurityToken)
+	}
+	signRequest(req, []byte{}, cred)
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return 0, err
+	}
+	defer resp.Body.Close()
+	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if resp.StatusCode >= 400 {
+		return 0, &ApiError{Code: resp.StatusCode, Status: resp.StatusCode, Message: truncateStr(string(raw), 300), Path: EpBenefitClaim}
+	}
+	var out struct {
+		ErrorCode string `json:"error_code"`
+		Result    struct {
+			CreateTime int64 `json:"create_time"` // 毫秒时间戳
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(raw, &out); err != nil {
+		return 0, fmt.Errorf("parse benefit status: %w", err)
+	}
+	if out.ErrorCode != "" && out.ErrorCode != "0000" {
+		return 0, fmt.Errorf("benefit status error_code=%s", out.ErrorCode)
+	}
+	return out.Result.CreateTime, nil
+}
+
+// BenefitBalance 免费额度余额（GET /api/v1/user/tokens/balance）。
+// 返回 total_quota（总额度）、total_balance（剩余）、used_amount（已用）。
+func (c *Client) BenefitBalance(cred SignCredential) (total, remain, used int64, err error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.benefitURL(EpBenefitBalance), nil)
+	if err != nil {
+		return 0, 0, 0, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Language", "zh-cn")
+	if cred.SecurityToken != "" {
+		req.Header.Set("X-Security-Token", cred.SecurityToken)
+	}
+	signRequest(req, []byte{}, cred)
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return 0, 0, 0, err
+	}
+	defer resp.Body.Close()
+	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if resp.StatusCode >= 400 {
+		return 0, 0, 0, &ApiError{Code: resp.StatusCode, Status: resp.StatusCode, Message: truncateStr(string(raw), 300), Path: EpBenefitBalance}
+	}
+	var out struct {
+		ErrorCode string `json:"error_code"`
+		Result    struct {
+			TotalQuota   int64 `json:"total_quota"`
+			TotalBalance int64 `json:"total_balance"`
+			UsedAmount   int64 `json:"used_amount"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(raw, &out); err != nil {
+		return 0, 0, 0, fmt.Errorf("parse benefit balance: %w", err)
+	}
+	if out.ErrorCode != "" && out.ErrorCode != "0000" {
+		return 0, 0, 0, fmt.Errorf("benefit balance error_code=%s", out.ErrorCode)
+	}
+	return out.Result.TotalQuota, out.Result.TotalBalance, out.Result.UsedAmount, nil
+}
+
 // fetchBenefitModels 拉取限时福利模型（gateway/config），返回结果整体标记 Benefit。
 func (c *Client) fetchBenefitModels(accountID string, cred SignCredential) ([]ModelInfo, error) {
 	key := accountID + "|benefit"

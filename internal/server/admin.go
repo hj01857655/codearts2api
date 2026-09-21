@@ -8,6 +8,7 @@ import (
 	"sync"
 
 	"codearts2api/internal/auth"
+	"codearts2api/internal/upstream"
 )
 
 // adminOverview 面板总览。
@@ -110,9 +111,108 @@ func (h *Handler) adminCredits(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// adminCheckin 无签到；映射为全员保活（refresh）。
+// benefitResult 单账号福利操作结果。
+type benefitResult struct {
+	UID        string `json:"uid"`
+	OK         bool   `json:"ok"`
+	Message    string `json:"message,omitempty"`
+	CreateTime int64  `json:"create_time,omitempty"` // 上次签到时间（毫秒）
+	Total      int64  `json:"total,omitempty"`       // 总额度
+	Remain     int64  `json:"remain,omitempty"`      // 剩余
+	Used       int64  `json:"used,omitempty"`        // 已用
+}
+
+// adminCheckin 真正领取限时福利（POST /api/v1/benefit/claim）并返回余额。
 func (h *Handler) adminCheckin(w http.ResponseWriter, r *http.Request) {
-	h.adminKeepalive(w, r)
+	body, err := readUIDBody(r)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"ok": false, "message": "bad json: " + err.Error()})
+		return
+	}
+	targets := h.pickTargets(body.UID)
+	results := make([]benefitResult, 0, len(targets))
+	for _, uid := range targets {
+		acct := h.cfg.Pool.Get(uid)
+		res := benefitResult{UID: uid}
+		if acct == nil || acct.Auth == nil {
+			res.Message = "no account"
+			results = append(results, res)
+			continue
+		}
+		token, ak, sk := acct.Auth.Credentials()
+		cred := upstream.SignCredential{AccessKeyID: ak, SecretAccessKey: sk, SecurityToken: token}
+		// 先领取（幂等）
+		if err := h.cfg.Upstream.ClaimBenefit(cred); err != nil {
+			res.Message = "claim: " + err.Error()
+			results = append(results, res)
+			continue
+		}
+		// 再查余额
+		total, remain, used, berr := h.cfg.Upstream.BenefitBalance(cred)
+		if berr != nil {
+			res.OK = true
+			res.Message = "claimed, balance: " + berr.Error()
+		} else {
+			res.OK = true
+			res.Message = "claimed"
+			res.Total = total
+			res.Remain = remain
+			res.Used = used
+		}
+		results = append(results, res)
+	}
+	okCount := 0
+	for _, r := range results {
+		if r.OK {
+			okCount++
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"ok": okCount == len(results), "message": summaryMsg("签到", toActionResults(results)), "results": results,
+	})
+}
+
+// adminBenefitStatus 查询全部账号福利签到状态 + 余额（不领取）。
+func (h *Handler) adminBenefitStatus(w http.ResponseWriter, r *http.Request) {
+	targets := h.pickTargets("")
+	results := make([]benefitResult, 0, len(targets))
+	for _, uid := range targets {
+		acct := h.cfg.Pool.Get(uid)
+		res := benefitResult{UID: uid}
+		if acct == nil || acct.Auth == nil {
+			res.Message = "no account"
+			results = append(results, res)
+			continue
+		}
+		token, ak, sk := acct.Auth.Credentials()
+		cred := upstream.SignCredential{AccessKeyID: ak, SecretAccessKey: sk, SecurityToken: token}
+		// 签到状态
+		ct, serr := h.cfg.Upstream.BenefitStatus(cred)
+		if serr != nil {
+			res.Message = "status: " + serr.Error()
+		} else {
+			res.OK = true
+			res.CreateTime = ct
+		}
+		// 余额
+		total, remain, used, berr := h.cfg.Upstream.BenefitBalance(cred)
+		if berr == nil {
+			res.Total = total
+			res.Remain = remain
+			res.Used = used
+		}
+		results = append(results, res)
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"results": results})
+}
+
+// toActionResults 把 benefitResult 转成 actionResult 供 summaryMsg 复用。
+func toActionResults(brs []benefitResult) []actionResult {
+	out := make([]actionResult, 0, len(brs))
+	for _, br := range brs {
+		out = append(out, actionResult{UID: br.UID, OK: br.OK, Message: br.Message})
+	}
+	return out
 }
 
 // adminKeepalive 刷新即将过期的 token。

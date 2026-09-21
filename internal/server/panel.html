@@ -182,6 +182,28 @@ input{font:inherit}
   </div>
 
   <div class="card">
+    <div class="card-h">
+      <h2>福利额度</h2>
+      <button class="btn" id="btnBenefitRefresh">刷新额度</button>
+    </div>
+    <div class="card-b" style="padding:0;overflow-x:auto">
+      <table class="table" id="benefitTable">
+        <thead>
+          <tr>
+            <th>账号</th>
+            <th>上次签到</th>
+            <th>总额度</th>
+            <th>已用</th>
+            <th>剩余</th>
+            <th>进度</th>
+          </tr>
+        </thead>
+        <tbody id="benefitBody"><tr><td colspan="6" class="empty">点击「刷新额度」查询</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="card">
     <div class="card-h"><h2>模型</h2><span class="muted" id="modelCount"></span></div>
     <div class="card-b"><div class="chips" id="modelChips"></div></div>
   </div>
@@ -361,6 +383,8 @@ async function showApp(){
   $("appView").classList.remove("hidden");
   try {
     await loadOverview();
+    // 后台拉一次福利额度（不阻塞首屏）
+    api("/admin/api/benefit/status").then(d => { if (d.results) renderBenefit(d.results); }).catch(() => {});
   } catch (e) {
     toast("登录失败: " + e.message, false);
     clearKey();
@@ -399,9 +423,50 @@ async function runAction(path, body){
 }
 
 $("btnCredits").onclick = () => runAction("/admin/api/credits", {});
-$("btnCheckin").onclick = () => runAction("/admin/api/checkin", {});
+$("btnCheckin").onclick = async () => {
+  const data = await runAction("/admin/api/checkin", {});
+  if (data && data.results) renderBenefit(data.results);
+};
 $("btnKeepalive").onclick = () => runAction("/admin/api/keepalive", {});
 $("btnReload").onclick = () => runAction("/admin/api/reload", {});
+$("btnBenefitRefresh").onclick = async () => {
+  try {
+    const data = await api("/admin/api/benefit/status");
+    if (data.results) renderBenefit(data.results);
+    toast("额度已刷新");
+  } catch(e){ toast(e.message, false); }
+};
+
+function renderBenefit(results){
+  const body = $("benefitBody");
+  if (!results || !results.length){
+    body.innerHTML = `<tr><td colspan="6" class="empty">暂无数据</td></tr>`;
+    return;
+  }
+  body.innerHTML = results.map(r => {
+    const lastClaim = r.create_time ? new Date(r.create_time).toLocaleString() : "从未签到";
+    const total = Number(r.total||0).toLocaleString();
+    const used = Number(r.used||0).toLocaleString();
+    const remain = Number(r.remain||0).toLocaleString();
+    const pct = r.total > 0 ? Math.round(r.remain / r.total * 100) : 0;
+    const barColor = pct > 50 ? "var(--ok)" : (pct > 20 ? "var(--warn)" : "var(--bad)");
+    return `<tr>
+      <td><strong>${escapeHtml(shortUID(r.uid))}</strong></td>
+      <td class="muted">${escapeHtml(lastClaim)}</td>
+      <td><strong>${total}</strong></td>
+      <td class="muted">${used}</td>
+      <td><strong style="color:${barColor}">${remain}</strong></td>
+      <td>
+        <div style="display:flex;align-items:center;gap:6px">
+          <div style="flex:1;height:6px;background:rgba(100,116,139,.18);border-radius:99px;overflow:hidden">
+            <div style="width:${pct}%;height:100%;background:${barColor};border-radius:99px"></div>
+          </div>
+          <span class="mono muted" style="font-size:11px">${pct}%</span>
+        </div>
+      </td>
+    </tr>`;
+  }).join("");
+}
 
 $("acctBody").addEventListener("click", async (e) => {
   const btn = e.target.closest("button[data-act]");
@@ -411,7 +476,10 @@ $("acctBody").addEventListener("click", async (e) => {
   btn.disabled = true;
   try {
     if (act === "credits") await runAction("/admin/api/credits", {uid});
-    else if (act === "checkin") await runAction("/admin/api/checkin", {uid});
+    else if (act === "checkin") {
+      const data = await runAction("/admin/api/checkin", {uid});
+      if (data && data.results) renderBenefit(data.results);
+    }
     else if (act === "enable") await runAction("/admin/api/accounts/enable", {uid});
     else if (act === "disable") await runAction("/admin/api/accounts/disable", {uid, reason:"manual disable from panel"});
     else if (act === "clear") await runAction("/admin/api/accounts/clear-cooldown", {uid});
