@@ -48,7 +48,7 @@ CodeArts2API 是一个自托管的 **OpenAI 兼容上游网关**：把 CodeArts 
   `X-Codearts-Chat-Id` 或 body 的 `conversation_id` 显式指定。
 - **授权登录免重启** — 控制台内点「授权登录」完成华为云 OAuth，账号落盘后自动载入池。
 - **限时福利自动领取** — 福利（免费套餐）模型在模型发现时幂等领取，聊天时自动附加上游要求的
-  `maas_type: benefit` 头（按发起请求的账号判定）。
+  `maas_type: benefit` + `model-id` + `model-name` 三个头（按发起请求的账号判定）。
 - **模型可用性探测** — 上游模型目录会列出账号实际未注册的模型，服务周期性探测并过滤，
   只暴露真实可用的条目。
 - **Web 管理控制台** — 面板经 `//go:embed` 打进二进制，账号池 / 福利额度 / 模型 / 调度 /
@@ -152,7 +152,7 @@ curl -X POST http://127.0.0.1:7866/v1/chat/completions \
 | `CA2A_QUEUE_MAX_ATTEMPTS` | 排队重试次数上限（约 5 分钟） | `30` |
 | `CA2A_BENEFIT_AUTO_CLAIM` | 发现模型时自动领取限时福利（幂等；关闭则福利模型不可用） | `true` |
 | `CA2A_LOGIN_CLIENT_ID` | 控制台授权登录使用的 OAuth client_id | 已有账号的取值，否则 `codearts-agent` |
-| `CA2A_UPDATE_REPO` | 在线更新使用的 GitHub 仓库（owner/name） | 见 `config.json` 的 `update_repo` |
+| `CA2A_UPDATE_REPO` | 在线更新使用的 GitHub 仓库（owner/name；空字符串关闭） | `hj01857655/codearts2api` |
 
 ### config.json
 
@@ -167,7 +167,7 @@ curl -X POST http://127.0.0.1:7866/v1/chat/completions \
   "default_model": "snap-chat",
   "cooldown": { "soft_rate": "60s", "err_threshold": 3, "err_cooldown": "10m" },
   "benefit_auto_claim": true,
-  "update_repo": "hj01857655/codearts2api",   // 留空则关闭在线更新
+  "update_repo": "hj01857655/codearts2api",   // 默认已指向本项目 Release；显式写成 "" 才关闭在线更新
   "max_concurrent": 5,
   "keepalive_window": "10m",
   "watch": { "enabled": true, "poll_minutes": 30, "refresh_skew_minutes": 30,
@@ -203,7 +203,7 @@ curl -X POST http://127.0.0.1:7866/v1/chat/completions \
 
 ## Web 控制台
 
-左侧导航分五个视图，顶栏右侧是动作区（刷新、设置菜单）：
+左侧导航分五个视图，顶栏右侧是动作区（刷新、设置菜单、用户菜单）：
 
 | 视图 | 内容 |
 |------|------|
@@ -213,7 +213,8 @@ curl -X POST http://127.0.0.1:7866/v1/chat/completions \
 | 调度 | 后台巡检与保活参数回显（轮询间隔、提前刷新窗口、保活间隔与窗口、单账号最大在途） |
 | 操作记录 | 本页发出的动作与结果流水，可筛操作 / 错误 |
 
-- **登录**：默认直接尝试加载（经反向代理并注入 `api_key` 时无需手填）；直连且未带 key 时回退到密钥表单，密钥只存本机浏览器 `localStorage`，请求以 `Authorization: Bearer` 发送。设置菜单里的**退出登录**会清除本地密钥并回到表单。
+- **登录**：默认直接尝试加载（经反向代理并注入 `api_key` 时无需手填）；直连且未带 key 时回退到密钥表单，密钥只存本机浏览器 `localStorage`，请求以 `Authorization: Bearer` 发送。顶栏最右的**用户菜单**显示密钥状态（已登录 / 未设置密钥），点开可看当前版本并**退出登录**（清除本地密钥并回到表单）。
+- **用户菜单**：位于设置菜单右侧，收起态显示登录状态，展开后是密钥是否已保存 + 当前版本 + 退出登录；带 `aria-haspopup` / `aria-expanded`，与设置菜单互斥，`Esc` 或点击外部关闭。
 - **主题**：明暗共四套色板（石墨、午夜、浅色、暖沙），在设置菜单里切换，选择存在浏览器本地；所有文字与状态色都按 WCAG AA（正文 4.5:1）取值。
 - **授权登录**：点「＋ 授权登录」获取链接，浏览器完成华为云登录后账号自动落盘并载入账号池，无需重启；部分浏览器会停在 `127.0.0.1` 回调，此时把地址栏完整地址粘贴进弹窗的「远程浏览器回调中转」即可。
 - **冷却**：只按时间自动恢复，面板没有手动清除按钮；有账号冷却时面板会定期补一次读数，到期自动回到可用态。
@@ -247,7 +248,7 @@ curl -X POST http://127.0.0.1:7866/v1/chat/completions \
 `/v1/models` 返回上游**精确模型 ID**（区分大小写，如 `GLM-5.2`、`Qwen3-VL-235B`），
 同时为含大写的 ID 补一条小写别名（`glm-5.2`），两者都能用于聊天。限时福利
 （免费套餐）模型额外带 `benefit: true` 标记，聊天时服务端会自动追加上游要求的
-`maas_type: benefit` 请求头（按发起请求的账号判定，多账号套餐不同也不会串——
+`maas_type: benefit` + `model-id` + `model-name` 请求头（按发起请求的账号判定，多账号套餐不同也不会串——
 列表是各账号可用模型的并集，实际路由会优先挑目录里真有这个模型的账号）。
 
 福利模型列表随免费套餐轮换，用下面这条命令核对当前账号实际可用的模型：

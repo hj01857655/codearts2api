@@ -132,8 +132,16 @@ Body：
 - 聊天路由：**同一** `POST {snap}/api/v2/chat/completions`，福利模型需追加请求头
   `maas_type: benefit`（renderer 检测 `isFreeBenefit` 添加，经 kernel `KERNEL_LLM_FORWARD_HEADERS`
   转发）。无此头报 `InferHub.002002009.404 model is not registered`；有头正常流式。
-- agent 选择：`useragents?offset=0&limit=100&is_primary_agent=true` 后取
-  `agent_name=="CodeAgent" && alias.alias_zh_cn=="智能体" && show_in_ide`（退化 primary/首个）。
+  免费通道实际要**三个头一起带**：`maas_type: benefit` + `model-id` + `model-name`
+  （对齐 Python 版注释与实测），三个都计入 SignedHeaders。
+- agent 选择：先拉 `useragents?offset=0&limit=100` 取**全量**候选（**不带**
+  `is_primary_agent=true`：该过滤由上游执行，会把非主 agent 直接抹掉，而模型可能
+  恰好挂在它们身上），本地按 `agent_name=="CodeAgent" && alias.alias_zh_cn=="智能体"
+  && show_in_ide` → `is_primary_agent` → 其余 排序，然后**逐个试** detail，直到某个
+  agent 真给出模型。主 agent 的 `gpts.models` 可能是空数组（实测「鸿蒙开发」
+  `is_primary_agent=true` 但 `models: []`），只认一个会白丢整路来源。
+  模型 ID 取 `model_id` 优先：`model_name` 可能是营销名（实测 `glm-5.2-sft-harmony`
+  的 `model_name` 为 `GLM-5.2-ArkTS-SPARK`，该 ID 调用返回 `002002009.404`）。
 - 内置补充接口：`GET {snap}/v1/model/builtin`（`Agent-Type: PromptCenter`）→ `{builtinModels:[...]}`。
 - 模型 ID 区分大小写；福利网关返回小写，`CanonicalModel` 做大小写不敏感归一。
 
