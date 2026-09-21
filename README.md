@@ -84,7 +84,7 @@ make test             # 跑全部测试
 ### 2. 准备配置
 
 ```bash
-cp config.example.json config.json
+cp config.example.jsonc config.json
 ```
 
 密钥三选一（详见[配置说明](#配置说明)）；没有密钥服务会**拒绝启动**：
@@ -140,7 +140,7 @@ curl -X POST http://127.0.0.1:7866/v1/chat/completions \
 | `CA2A_LISTEN` | 监听地址 | `:7866` |
 | `CA2A_AUTH_DIR` | 凭证目录 | `./auths` |
 | `CA2A_STATE_FILE` | 状态文件 | `./data/state.json` |
-| `CA2A_DEFAULT_MODEL` | 默认模型 | `glm-5.2`（`config.example.json` 里给的是 `snap-chat`） |
+| `CA2A_DEFAULT_MODEL` | 默认模型 | `glm-5.2`（`config.example.jsonc` 里给的是 `snap-chat`） |
 | `CA2A_OAUTH_CALLBACK_HOST` | OAuth 回调主机 | - |
 | `CA2A_WATCH_ENABLED` | 调度器开关 | `true` |
 | `CA2A_WATCH_POLL_MINUTES` | 轮询间隔（分钟） | `30` |
@@ -156,7 +156,7 @@ curl -X POST http://127.0.0.1:7866/v1/chat/completions \
 
 ### config.json
 
-`config.example.json` 可直接复制使用（`//` 与 `/* */` 注释会被忽略）：
+`config.example.jsonc` 可直接复制使用（`//` 与 `/* */` 注释会被忽略）：
 
 ```jsonc
 {
@@ -327,7 +327,7 @@ curl -fsSL https://github.com/hj01857655/codearts2api/releases/latest/download/c
 # 1. 目录、二进制与配置。auths/ 与 data/ 不在仓库里（.gitignore），必须自建：
 sudo mkdir -p /opt/codearts2api/{bin,auths,data}
 sudo cp bin/codearts2api /opt/codearts2api/bin/
-sudo cp config.example.json /opt/codearts2api/config.json
+sudo cp config.example.jsonc /opt/codearts2api/config.json
 sudo cp deploy/codearts2api.service /etc/systemd/system/
 
 # 2. 配置：写 api_key（或 .env 里的 CA2A_API_KEY），想让控制台能在线更新就填 update_repo
@@ -351,7 +351,7 @@ sudo systemctl daemon-reload && sudo systemctl enable --now codearts2api
 ```bash
 export CA2A_API_KEY=你的随机密钥
 mkdir -p auths data
-cp config.example.json config.json
+cp config.example.jsonc config.json
 docker compose up -d --build
 ```
 

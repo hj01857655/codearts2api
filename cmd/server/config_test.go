@@ -7,12 +7,12 @@ import (
 	"testing"
 )
 
-// 仓库自带的 config.example.json 含 // 注释，README 让人直接 cp 成 config.json；
+// 仓库自带的 config.example.jsonc 含 // 注释，README 让人直接 cp 成 config.json；
 // 带注释的配置必须能加载，否则快起步就断在第一步。
 func TestLoadToleratesExampleConfigComments(t *testing.T) {
-	raw, err := os.ReadFile(filepath.Join("..", "..", "config.example.json"))
+	raw, err := os.ReadFile(filepath.Join("..", "..", "config.example.jsonc"))
 	if err != nil {
-		t.Fatalf("read config.example.json: %v", err)
+		t.Fatalf("read config.example.jsonc: %v", err)
 	}
 	// 没有 api_key 现在会拒绝启动，示例配置的用例显式给一个（env 优先）。
 	t.Setenv("CA2A_API_KEY", "test-key")

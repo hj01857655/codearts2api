@@ -115,8 +115,8 @@ func Load(path string) (*Config, error) {
 
 // stripJSONComments 去掉配置里的 // 与 /* */ 注释。
 //
-// config.example.json 带注释（字段说明只在那一份里），README 又让人直接
-// `cp config.example.json config.json`；标准 encoding/json 不接受注释，
+// config.example.jsonc 带注释（字段说明只在那一份里），README 又让人直接
+// `cp config.example.jsonc config.json`；标准 encoding/json 不接受注释，
 // 因此这里先做一次剥离。字符串内的 // 与 /* 本身不动（oauth_callback_host
 // 这类值就是 URL）。
 func stripJSONComments(raw []byte) []byte {

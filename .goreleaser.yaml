@@ -23,7 +23,7 @@ archives:
     formats: [tar.gz]
     name_template: "{{ .ProjectName }}_{{ .Os }}_{{ .Arch }}"
     files:
-      - config.example.json
+      - config.example.jsonc
       - deploy/codearts2api.service
 
 checksum:
