@@ -15,9 +15,12 @@ import (
 const updateTimeout = 15 * time.Minute
 
 // updaterOrErr 返回更新服务；未配置时给出可读原因。
+//
+// 这里的文案会原样进入面板 toast 与操作记录（四个更新端点都复用它），
+// 所以用中文；保留 update_repo 字样，用户才知道该改哪个配置项。
 func (h *Handler) updaterOrErr() (*update.Service, error) {
 	if h.updater == nil {
-		return nil, errors.New("online update is not configured (set update_repo)")
+		return nil, errors.New("未配置在线更新：请在 config.json 里设置 update_repo（owner/name）")
 	}
 	return h.updater, nil
 }

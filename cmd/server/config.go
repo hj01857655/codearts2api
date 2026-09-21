@@ -54,7 +54,8 @@ type Config struct {
 	BenefitAutoClaim bool `json:"benefit_auto_claim"`
 
 	// UpdateRepo 在线更新使用的 GitHub 仓库（owner/name）。
-	// 留空则控制台不提供在线更新入口。
+	// 默认指向本项目自己的 Release（见 DefaultUpdateRepo）；显式写成 "" 才关闭
+	// 在线更新入口——配置缺失不该等于功能失效。
 	UpdateRepo string `json:"update_repo"`
 
 	Upstream struct {
@@ -65,6 +66,14 @@ type Config struct {
 	ErrCooldownDur time.Duration
 }
 
+// DefaultUpdateRepo 在线更新的默认仓库。
+//
+// README 的安装/升级命令与 .goreleaser 都指向这个仓库，因此它才是本项目
+// 「自己的」发布地址；只在 config.example.jsonc 里写它并不够——那份文件用户
+// 不一定复制（已有部署的 config.json 也不会有这一项），结果是开箱即报
+// 「未配置在线更新」。想关掉在线更新就显式写 "update_repo": ""。
+const DefaultUpdateRepo = "hj01857655/codearts2api"
+
 // Default 默认配置。
 func Default() *Config {
 	c := &Config{
@@ -72,6 +81,7 @@ func Default() *Config {
 		AuthDir:      "./auths",
 		StateFile:    "./data/state.json",
 		DefaultModel: "glm-5.2",
+		UpdateRepo:   DefaultUpdateRepo,
 	}
 	c.Cooldown.SoftRate = "60s"
 	c.Cooldown.ErrThresh = 3

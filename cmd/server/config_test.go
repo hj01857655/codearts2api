@@ -36,6 +36,38 @@ func TestLoadToleratesExampleConfigComments(t *testing.T) {
 	}
 }
 
+// update_repo 缺失时必须落到内置默认（而不是「未配置在线更新」）：README 与
+// .goreleaser 都指向同一个仓库，开箱即用的语义应是可在线更新。已上线的
+// config.json 不会有这一项，只有显式写成 "" 才关闭。
+func TestUpdateRepoDefaultsWhenAbsent(t *testing.T) {
+	t.Setenv("CA2A_API_KEY", "test-key")
+
+	path := filepath.Join(t.TempDir(), "config.json")
+	if err := os.WriteFile(path, []byte(`{"listen":":7866"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.UpdateRepo != DefaultUpdateRepo {
+		t.Errorf("缺失 update_repo 应取默认 %q，got %q", DefaultUpdateRepo, cfg.UpdateRepo)
+	}
+
+	// 显式空字符串是关闭开关，不能被默认值盖掉。
+	off := filepath.Join(t.TempDir(), "off.json")
+	if err := os.WriteFile(off, []byte(`{"update_repo":""}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfgOff, err := Load(off)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfgOff.UpdateRepo != "" {
+		t.Errorf("显式空 update_repo 应关闭在线更新，got %q", cfgOff.UpdateRepo)
+	}
+}
+
 func TestStripJSONCommentsKeepsStrings(t *testing.T) {
 	raw := []byte("{\n" +
 		"  // 行注释\n" +

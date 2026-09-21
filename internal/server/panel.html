@@ -330,7 +330,9 @@ button.chip:hover{border-color:var(--accent);color:var(--ink)}
       <button class="icon ghost" id="btnRefresh" title="刷新" aria-label="刷新"><svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M13.5 8a5.5 5.5 0 1 1-1.6-3.9"/><path d="M13.5 2.5v3h-3"/></svg></button>
       <div class="menu-wrap">
         <button class="icon ghost" id="btnSettings" title="设置" aria-label="设置" aria-haspopup="menu" aria-expanded="false">
-          <svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.3"><circle cx="8" cy="8" r="2.1"/><path d="M8 1.5v1.8M8 12.7v1.8M1.5 8h1.8M12.7 8h1.8M3.4 3.4l1.3 1.3M11.3 11.3l1.3 1.3M12.6 3.4l-1.3 1.3M4.7 11.3l-1.3 1.3"/></svg>
+          <!-- 齿轮轮廓（外圈齿形 + 中心孔）。此前是圆 + 八条放射短线，在 15px 下会被读成
+               太阳/亮度图标，用户找不到「设置」。 -->
+          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3.2"/><path d="M19.6 14.4a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1.03 1.55v.17a2 2 0 1 1-4 0v-.09a1.7 1.7 0 0 0-1.11-1.55 1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.7 1.7 0 0 0 .34-1.87 1.7 1.7 0 0 0-1.55-1.03h-.17a2 2 0 1 1 0-4h.09a1.7 1.7 0 0 0 1.55-1.11 1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.7 1.7 0 0 0 1.87.34h.08a1.7 1.7 0 0 0 1.03-1.55v-.17a2 2 0 1 1 4 0v.09a1.7 1.7 0 0 0 1.03 1.55 1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.7 1.7 0 0 0-.34 1.87v.08a1.7 1.7 0 0 0 1.55 1.03h.17a2 2 0 1 1 0 4h-.09a1.7 1.7 0 0 0-1.55 1.03z"/></svg>
         </button>
         <div class="menu" id="settingsMenu" role="menu" hidden>
           <div class="grp">主题</div>
@@ -525,12 +527,15 @@ button.chip:hover{border-color:var(--accent);color:var(--ink)}
 const SERVICE = "__SERVICE_NAME__";
 const KEY_STORE = SERVICE + "_panel_api_key";
 const THEME_STORE = SERVICE + "_panel_theme";
-// 面板可挂在根路径或 /panel 前缀下，api 路径按当前挂载点拼。
+// 面板可挂在根路径或 /panel /admin 前缀下，api 路径按当前挂载点拼。
+// 挂载点必须从 BASE 去掉：API 路径本身以 /admin/api 开头（见 handler 路由），
+// 只刨 /panel 时在 /admin 下会拼成 /admin/admin/api/... 而 404。
 const BASE = (() => {
   let p = location.pathname.replace(/\/+$/, "") || "";
-  if (p.endsWith("/panel")) p = p.slice(0, -"/panel".length);
-  if (p === "" || p === "/") return "";
-  return p;
+  for (const mount of ["/panel", "/admin"]) {
+    if (p.endsWith(mount)) { p = p.slice(0, -mount.length); break; }
+  }
+  return p === "/" ? "" : p;
 })();
 const $ = (id) => document.getElementById(id);
 
