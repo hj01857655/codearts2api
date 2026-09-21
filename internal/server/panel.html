@@ -218,6 +218,15 @@ button.chip:hover{border-color:var(--accent);color:var(--ink)}
 .menu button.danger:hover:not(:disabled){background:var(--bad-soft);color:var(--bad)}
 @media (max-width:760px){.menu{right:auto;left:0}}
 
+/* ── 用户菜单（顶栏最右）────────────────────────────────────────── */
+/* 这一个菜单贴在右边缘，窄屏下若跟随上面媒体查询的 left:0 会向右溢出，
+   故显式压回右对齐（选择器权重高于媒体查询里的 .menu）。 */
+.menu-wrap.user .menu{right:0;left:auto}
+.uinfo{display:flex;align-items:center;gap:8px}
+.uinfo .uavatar{width:20px;height:20px;border-radius:50%;flex:none;display:grid;place-items:center;font-weight:700;font-size:11px;font-family:var(--mono);background:var(--accent);color:var(--accent-ink)}
+.uinfo .uavatar.off{background:var(--surface-2);color:var(--ink-3);border:1px solid var(--line)}
+.uinfo .uchev{width:12px;height:12px;flex:none;opacity:.65}
+
 /* ── 弹层 ─────────────────────────────────────────────────────────── */
 .veil{position:fixed;inset:0;background:rgba(6,8,13,.62);backdrop-filter:blur(2px);display:none;z-index:60}
 .veil.on{display:flex;align-items:center;justify-content:center;padding:20px}
@@ -337,9 +346,21 @@ button.chip:hover{border-color:var(--accent);color:var(--ink)}
           <button id="btnUpdateApply" class="hidden" role="menuitem">立即更新</button>
           <button id="btnUpdateRollback" class="hidden" role="menuitem">回滚上一版</button>
           <button id="btnUpdateRestart" class="hidden" role="menuitem">重启服务</button>
-          <hr>
-          <div class="grp">会话</div>
-          <div class="who" id="menuKey">未设置密钥</div>
+        </div>
+      </div>
+
+      <div class="menu-wrap user">
+        <button id="btnUser" title="账户" aria-haspopup="menu" aria-expanded="false">
+          <span class="uinfo">
+            <span class="uavatar off" id="userAvatar" aria-hidden="true">?</span>
+            <span id="userName">未设置密钥</span>
+            <svg class="uchev" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M4.5 6.5 8 10l3.5-3.5"/></svg>
+          </span>
+        </button>
+        <div class="menu" id="userMenu" role="menu" hidden>
+          <div class="grp">账户</div>
+          <div class="who" id="menuKey">未设置 API Key</div>
+          <div class="who" id="userVersion">v-</div>
           <button id="btnLogout" class="danger" role="menuitem">退出登录</button>
         </div>
       </div>
@@ -568,8 +589,8 @@ function logLine(ch, text){
 
 /* ── API ──────────────────────────────────────────────────────────── */
 function getKey(){ return localStorage.getItem(KEY_STORE) || ""; }
-function setKey(k){ localStorage.setItem(KEY_STORE, k); }
-function clearKey(){ localStorage.removeItem(KEY_STORE); }
+function setKey(k){ localStorage.setItem(KEY_STORE, k); renderMenuKey(); }
+function clearKey(){ localStorage.removeItem(KEY_STORE); renderMenuKey(); }
 
 async function api(path, opts = {}){
   const headers = Object.assign({ "Content-Type": "application/json" }, opts.headers || {});
@@ -768,7 +789,7 @@ async function loadOverview(){
     const data = await api("/admin/api/overview");
     state.overview = data;
     state.accounts = data.accounts || [];
-    if (data.version && !state.updateChecked) $("menuVersion").textContent = "当前 " + data.version;
+    if (data.version && !state.updateChecked) versionLabel("当前 " + data.version);
     $("navBase").textContent = (data.region || "cn") + " · " + (location.host || "本地");
     $("subMeta").textContent = "更新于 " + new Date().toLocaleTimeString();
     renderAccounts();
@@ -859,15 +880,45 @@ function renderThemeMenu(){
 }
 function renderMenuKey(){
   // 只报密钥是否存在，不回显任何字符。
-  $("menuKey").textContent = getKey() ? "API Key 已保存（仅本机浏览器）" : "未设置 API Key";
+  const has = !!getKey();
+  $("menuKey").textContent = has ? "API Key 已保存（仅本机浏览器）" : "未设置 API Key";
+  $("userName").textContent = has ? "已登录" : "未设置密钥";
+  $("userAvatar").textContent = has ? "A" : "?";
+  $("userAvatar").classList.toggle("off", !has);
+}
+// 版本号在设置菜单与用户菜单各显示一处，统一从这里写，避免两边状态漂移。
+function versionLabel(text){
+  $("menuVersion").textContent = text;
+  $("userVersion").textContent = text;
+}
+function setMenuOpen(menuId, btnId, open){
+  $(menuId).hidden = !open;
+  $(btnId).setAttribute("aria-expanded", String(open));
 }
 function openMenu(open){
-  $("settingsMenu").hidden = !open;
-  $("btnSettings").setAttribute("aria-expanded", String(open));
+  setMenuOpen("settingsMenu", "btnSettings", open);
   if (open){ renderThemeMenu(); renderMenuKey(); }
 }
+function openUserMenu(open){
+  setMenuOpen("userMenu", "btnUser", open);
+  if (open) renderMenuKey();
+}
+function closeMenus(){ openMenu(false); openUserMenu(false); }
 syncTheme();
-$("btnSettings").onclick = (e) => { e.stopPropagation(); openMenu($("settingsMenu").hidden); };
+renderMenuKey();
+// 两个菜单互斥：开一个先关另一个，避免两片浮层叠在一起。
+$("btnSettings").onclick = (e) => {
+  e.stopPropagation();
+  const open = $("settingsMenu").hidden;
+  closeMenus();
+  openMenu(open);
+};
+$("btnUser").onclick = (e) => {
+  e.stopPropagation();
+  const open = $("userMenu").hidden;
+  closeMenus();
+  openUserMenu(open);
+};
 $("settingsMenu").addEventListener("click", (e) => {
   const b = e.target.closest("[data-theme-opt]");
   if (!b) return;
@@ -875,11 +926,11 @@ $("settingsMenu").addEventListener("click", (e) => {
   toast("主题：" + THEMES.find(([id]) => id === b.dataset.themeOpt)[1]);
   openMenu(false);
 });
-document.addEventListener("click", (e) => { if (!e.target.closest(".menu-wrap")) openMenu(false); });
-document.addEventListener("keydown", (e) => { if (e.key === "Escape") openMenu(false); });
+document.addEventListener("click", (e) => { if (!e.target.closest(".menu-wrap")) closeMenus(); });
+document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeMenus(); });
 $("btnLogout").onclick = () => {
   clearKey();
-  openMenu(false);
+  closeMenus();
   state.benefit = null;
   state.accounts = [];
   logLine("op", "退出登录");
@@ -892,7 +943,7 @@ $("btnLogout").onclick = () => {
 function renderUpdate(st){
   if (!st) return;
   state.updateChecked = true;
-  $("menuVersion").textContent = "当前 " + (st.current || "-") + (st.latest ? " · 最新 " + st.latest : "");
+  versionLabel("当前 " + (st.current || "-") + (st.latest ? " · 最新 " + st.latest : ""));
   $("btnUpdateApply").hidden = !(st.supported && st.has_update);
   $("btnUpdateRollback").hidden = !st.can_rollback;
 }
@@ -901,11 +952,11 @@ function updateLabel(ok, msg){
   logLine(ok ? "op" : "err", "在线更新 · " + msg);
 }
 $("btnUpdateCheck").onclick = async () => {
-  openMenu(false);
+  closeMenus();
   try {
     const d = await api("/admin/api/update/check");
     if (d.configured === false){
-      $("menuVersion").textContent = "未配置 update_repo";
+      versionLabel("未配置 update_repo");
       updateLabel(false, d.message || "未配置在线更新");
       return;
     }
@@ -918,7 +969,7 @@ $("btnUpdateCheck").onclick = async () => {
   }
 };
 $("btnUpdateApply").onclick = async () => {
-  openMenu(false);
+  closeMenus();
   updateLabel(true, "开始下载更新，请稍候…");
   try {
     const d = await api("/admin/api/update/apply", { method: "POST", body: "{}" });
@@ -932,7 +983,7 @@ $("btnUpdateApply").onclick = async () => {
   }
 };
 $("btnUpdateRollback").onclick = async () => {
-  openMenu(false);
+  closeMenus();
   try {
     const d = await api("/admin/api/update/rollback", { method: "POST", body: "{}" });
     $("btnUpdateRestart").hidden = false;
@@ -942,7 +993,7 @@ $("btnUpdateRollback").onclick = async () => {
   }
 };
 $("btnUpdateRestart").onclick = async () => {
-  openMenu(false);
+  closeMenus();
   try {
     const d = await api("/admin/api/update/restart", { method: "POST", body: "{}" });
     updateLabel(!!d.ok, d.message || "正在重启");
