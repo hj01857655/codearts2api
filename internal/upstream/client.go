@@ -571,7 +571,15 @@ func (c *Client) sendChatV2(ctx context.Context, body map[string]any, traceID st
 		httpReq.Header.Set(k, v)
 	}
 	if benefit {
+		// 上游免费通道要求 maas_type 与模型身份头一起带（Python 版实测注释：
+		// 缺 model-id/model-name 时报 "model is not registered"）。三个头都在
+		// signRequest 之前设置，因此计入 SignedHeaders——只带 maas_type 时若上游
+		// 改用模型身份校验就会失配，那时候再多一个未签名头会更难查。
 		httpReq.Header.Set(HeaderMaasType, MaasBenefit)
+		if id, _ := body["model"].(string); id != "" {
+			httpReq.Header.Set("model-id", id)
+			httpReq.Header.Set("model-name", id)
+		}
 	}
 	signRequest(httpReq, raw, cred)
 	if chatID != "" {

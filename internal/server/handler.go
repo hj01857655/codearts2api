@@ -110,9 +110,10 @@ func (h *Handler) loadModelCache() {
 
 // staticModel 静态兜底模型：动态发现失败时 /v1/models 仍能列出实测可用模型。
 type staticModel struct {
-	ID            string
-	ContextWindow int64
-	Benefit       bool
+	ID             string
+	ContextWindow  int64
+	MaxTokens      int64
+	Benefit        bool
 	SupportsImages bool
 }
 
@@ -125,13 +126,16 @@ type staticModel struct {
 //	✅ GLM-5.2、glm-5.2-sft-harmony、Qwen3-VL-235B
 //	❌ GLM-5.2-ArkTS-SPARK、OpenPangu-2.0-Pro、OpenPangu-2.0-Flash（002002009.404）
 var staticModels = []staticModel{
-	{ID: "GLM-5.2", ContextWindow: 202752},
+	// 数值对齐上游 gateway/config 实测返回（2026-09-21 抓包）；pro 是 1000000，
+	// 不是 flash 的 1048576——兜底值写错会让客户端按它误算上下文。
+	// GLM-5.2 的 max_tokens 取上游 agent-center 实测值 8192。
+	{ID: "GLM-5.2", ContextWindow: 202752, MaxTokens: 8192},
 	{ID: "glm-5.2-sft-harmony", ContextWindow: 131072},
 	{ID: "Qwen3-VL-235B", ContextWindow: 131072, SupportsImages: true},
 	// 限时福利（需领取；领取后实测可用，聊天自动带 maas_type: benefit）
-	{ID: "deepseek-v4-flash-0731", ContextWindow: 1048576, Benefit: true},
-	{ID: "deepseek-v4-pro-0813", ContextWindow: 1048576, Benefit: true},
-	{ID: "glm-5.3-flash", ContextWindow: 1048576, Benefit: true},
+	{ID: "deepseek-v4-flash-0731", ContextWindow: 1048576, MaxTokens: 393216, Benefit: true},
+	{ID: "deepseek-v4-pro-0813", ContextWindow: 1000000, MaxTokens: 393216, Benefit: true},
+	{ID: "glm-5.3-flash", ContextWindow: 1048576, MaxTokens: 131072, Benefit: true},
 }
 
 const (
@@ -637,7 +641,7 @@ func modelEntries(infos []upstream.ModelInfo) []map[string]any {
 		addAlias(mi.ID, mi.ContextWindow, mi.MaxTokens, mi.Benefit, mi.SupportsImages, mi.Name, mi.Desc)
 	}
 	for _, sm := range staticModels {
-		addAlias(sm.ID, sm.ContextWindow, 0, sm.Benefit, sm.SupportsImages, "", "")
+		addAlias(sm.ID, sm.ContextWindow, sm.MaxTokens, sm.Benefit, sm.SupportsImages, "", "")
 	}
 	return out
 }

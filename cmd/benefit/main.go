@@ -58,11 +58,7 @@ func main() {
 			}
 
 		case "claim":
-			if err := c.ClaimBenefit(cred); err != nil {
-				fmt.Printf("  签到失败: %v\n", err)
-			} else {
-				fmt.Println("  签到成功")
-			}
+			claimLine(c, cred)
 			showBalance(c, cred)
 
 		case "balance":
@@ -84,19 +80,35 @@ func main() {
 
 		default:
 			// 签到 + 状态 + 余额
-			ct, _ := c.BenefitStatus(cred)
-			if ct == 0 {
-				fmt.Println("  最近签到: 从未签到")
-			} else {
-				fmt.Printf("  最近签到: %s\n", time.UnixMilli(ct).Format("2006-01-02 15:04:05"))
-			}
-			if err := c.ClaimBenefit(cred); err != nil {
-				fmt.Printf("  签到失败: %v\n", err)
-			} else {
-				fmt.Println("  签到成功")
-			}
+			claimLine(c, cred)
 			showBalance(c, cred)
 		}
+	}
+}
+
+// claimLine 领取并报出结论。
+//
+// 上游把领取做成幂等：已领过时同样返回 error_code=0000 且 create_time 不变，
+// 所以「签到成功」这种写法会把「本次空转」当成「新领到」。拿调用前后的
+// create_time 对比才能说清。
+func claimLine(c *upstream.Client, cred upstream.SignCredential) {
+	before, err := c.BenefitStatus(cred)
+	if err != nil {
+		fmt.Printf("  签到前状态查询失败: %v\n", err)
+	}
+	claim, err := c.ClaimBenefit(cred)
+	if err != nil {
+		fmt.Printf("  签到失败: %v\n", err)
+		return
+	}
+	switch claim.Status(before) {
+	case upstream.ClaimNew:
+		fmt.Printf("  签到成功: 本次已领到（%s）\n", time.UnixMilli(claim.CreateTime).Format("2006-01-02 15:04:05"))
+	case upstream.ClaimExisting:
+		fmt.Printf("  未重复发放: 此前已领过，create_time 仍为 %s\n",
+			time.UnixMilli(claim.CreateTime).Format("2006-01-02 15:04:05"))
+	default:
+		fmt.Println("  领取成功（上游未返回 create_time，无法判断是否本次新领）")
 	}
 }
 

@@ -215,9 +215,22 @@ func TestChatCompletionsSignsBenefitHeaderForGLM53Flash(t *testing.T) {
 	if got := headers.Get("maas_type"); got != "benefit" {
 		t.Fatalf("maas_type=%q, want benefit", got)
 	}
+	// 免费通道的三个头必须齐（对齐 Python 版与 IDE 抓包）：只有 maas_type 而上游
+	// 按 model-id/model-name 校验时会报 "model is not registered"。
+	if got := headers.Get("model-id"); got != "glm-5.3-flash" {
+		t.Fatalf("model-id=%q, want glm-5.3-flash", got)
+	}
+	if got := headers.Get("model-name"); got != "glm-5.3-flash" {
+		t.Fatalf("model-name=%q, want glm-5.3-flash", got)
+	}
 	authorization := headers.Get("Authorization")
 	if !strings.Contains(authorization, "SignedHeaders=") || !strings.Contains(authorization, "maas_type") {
 		t.Fatalf("maas_type was not covered by the Huawei signature: %q", authorization)
+	}
+	for _, h := range []string{"model-id", "model-name"} {
+		if !strings.Contains(authorization, h) {
+			t.Fatalf("%s必须计入签名，authz=%q", h, authorization)
+		}
 	}
 }
 
@@ -252,7 +265,7 @@ func TestModelsAdvertisesOnlyVerifiedNewCodeArtsModels(t *testing.T) {
 			}
 		}
 	}
-	want := map[string]int{"deepseek-v4-pro-0813": 1048576, "GLM-5.2": 202752}
+	want := map[string]int{"deepseek-v4-pro-0813": 1000000, "GLM-5.2": 202752}
 	for _, model := range payload.Data {
 		if expected, ok := want[model.ID]; ok {
 			if model.ContextLength != expected {
