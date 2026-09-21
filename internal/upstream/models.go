@@ -43,6 +43,10 @@ type ModelInfo struct {
 	Name          string `json:"name"`
 	ContextWindow int64  `json:"contextWindow,omitempty"`
 	MaxTokens     int64  `json:"maxTokens,omitempty"`
+	// SortOrder 上游 gateway/config 的 sort 字段（越小越前，0 = 上游未给）。
+	// 上游用它表达展示顺序（实测 10/20/30）；只按 ID 字母序排会把这个意图打乱。
+	// 带 json tag 是为了在磁盘模型缓存里存活（loadModelCache 会反序列化）。
+	SortOrder int `json:"sort,omitempty"`
 	// Benefit 限时福利（免费套餐）模型：聊天需带 maas_type: benefit 头。
 	Benefit bool   `json:"benefit,omitempty"`
 	Desc    string `json:"desc,omitempty"`
@@ -167,13 +171,7 @@ func setAccountModels(accountID string, infos []ModelInfo, keepBenefit bool) {
 				catalog.known[key] = mi.ID
 			}
 		}
-		sort.Slice(ac.infos, func(i, j int) bool {
-			li, lj := strings.ToLower(ac.infos[i].ID), strings.ToLower(ac.infos[j].ID)
-			if li != lj {
-				return li < lj
-			}
-			return ac.infos[i].ID < ac.infos[j].ID
-		})
+		sort.Slice(ac.infos, func(i, j int) bool { return modelLess(ac.infos[i], ac.infos[j]) })
 	}
 	catalog.accounts[accountID] = ac
 }
@@ -257,14 +255,29 @@ func MergeModels(sets ...[]ModelInfo) []ModelInfo {
 	for _, mi := range merged {
 		out = append(out, mi)
 	}
-	sort.Slice(out, func(i, j int) bool {
-		li, lj := strings.ToLower(out[i].ID), strings.ToLower(out[j].ID)
-		if li != lj {
-			return li < lj
-		}
-		return out[i].ID < out[j].ID
-	})
+	sort.Slice(out, func(i, j int) bool { return modelLess(out[i], out[j]) })
 	return out
+}
+
+// modelLess 统一模型展示顺序：先按上游 sort（未给的排在其后），再按 ID 字母序。
+//
+// 上游 gateway/config 的 sort 就是它期望的展示顺序，手写字母序不该盖掉它。
+func modelLess(a, b ModelInfo) bool {
+	if a.SortOrder != b.SortOrder {
+		switch {
+		case a.SortOrder == 0:
+			return false
+		case b.SortOrder == 0:
+			return true
+		default:
+			return a.SortOrder < b.SortOrder
+		}
+	}
+	li, lj := strings.ToLower(a.ID), strings.ToLower(b.ID)
+	if li != lj {
+		return li < lj
+	}
+	return a.ID < b.ID
 }
 
 // richerModel 合并同一模型的两条记录：福利标记取或（漏标即漏头），其余取更全的一条。
@@ -287,6 +300,9 @@ func richerModel(cur, next ModelInfo) ModelInfo {
 	}
 	if keep.Desc == "" {
 		keep.Desc = drop.Desc
+	}
+	if keep.SortOrder == 0 {
+		keep.SortOrder = drop.SortOrder
 	}
 	return keep
 }
@@ -342,14 +358,32 @@ func (c *Client) FetchModels(acct *auth.Auth) ([]ModelInfo, error) {
 }
 
 // fetchAgentModels 官方 fetchAgentModels 等价实现：agent-center detail 的 gpts.models。
+//
+// 逐个候选 agent 试到第一个真有模型的为止。主 agent 的 gpts.models 可能是空数组
+// （实测「鸿蒙开发」is_primary_agent=true 但 models: []），只认一个 agent 会白丢整路来源。
 func (c *Client) fetchAgentModels(cred SignCredential) ([]ModelInfo, error) {
-	agentID, err := c.defaultAgentID(cred)
+	ids, err := c.candidateAgentIDs(cred)
 	if err != nil {
 		return nil, err
 	}
-	if agentID == "" {
-		return nil, fmt.Errorf("no default agent found")
+	if len(ids) == 0 {
+		return nil, fmt.Errorf("no agent found")
 	}
+	for _, agentID := range ids {
+		infos, derr := c.agentModelsByID(agentID, cred)
+		if derr != nil {
+			Log("agent detail %s: %v", agentID, derr)
+			continue
+		}
+		if len(infos) > 0 {
+			return infos, nil
+		}
+	}
+	return nil, fmt.Errorf("no agent returned models (%d candidates)", len(ids))
+}
+
+// agentModelsByID 取单个 agent 的 gpts.models。
+func (c *Client) agentModelsByID(agentID string, cred SignCredential) ([]ModelInfo, error) {
 	raw, err := c.getSigned(context.Background(), c.snapURL(EpAgentDetail)+"?agent_id="+url.QueryEscape(agentID), cred, true)
 	if err != nil {
 		return nil, err
@@ -375,7 +409,10 @@ func (c *Client) fetchAgentModels(cred SignCredential) ([]ModelInfo, error) {
 	}
 	out := make([]ModelInfo, 0, len(detail.Gpts.Models))
 	for _, m := range detail.Gpts.Models {
-		id := firstNonEmpty(m.ModelName, m.ModelID, m.ModelAlias, m.Params.ModelID)
+		// 先取可调用的 model_id（Python 版同序）：model_name 可能是营销名
+		// （实测 glm-5.2-sft-harmony 的 model_name 为 GLM-5.2-ArkTS-SPARK），
+		// 拿它当 ID 会请求到未注册模型。
+		id := firstNonEmpty(m.ModelID, m.Params.ModelID, m.ModelName, m.ModelAlias)
 		if id == "" {
 			continue
 		}
@@ -391,13 +428,15 @@ func (c *Client) fetchAgentModels(cred SignCredential) ([]ModelInfo, error) {
 	return out, nil
 }
 
-// defaultAgentID 拉取用户 agent 列表，返回 CodeAgent 的 agent_id。
-// 过滤条件与官方客户端一致：agent_name=="CodeAgent" && alias.alias_zh_cn=="智能体" && show_in_ide，
-// 退化为 is_primary_agent，再退化为首个。
-func (c *Client) defaultAgentID(cred SignCredential) (string, error) {
+// candidateAgentIDs 拉取用户 agent 列表，按优先级返回候选 agent_id。
+//
+// 顺序与官方客户端一致：agent_name=="CodeAgent" && alias.alias_zh_cn=="智能体"
+// && show_in_ide 优先，其次 is_primary_agent，最后列表其余；同档内保持上游顺序。
+// 调用方逐个试，直到某个 agent 真给出模型。
+func (c *Client) candidateAgentIDs(cred SignCredential) ([]string, error) {
 	raw, err := c.getSigned(context.Background(), c.snapURL(EpAgentList)+"?offset=0&limit=100&is_primary_agent=true", cred, true)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	var out struct {
 		Agents []struct {
@@ -411,22 +450,23 @@ func (c *Client) defaultAgentID(cred SignCredential) (string, error) {
 		} `json:"agents"`
 	}
 	if err := json.Unmarshal(raw, &out); err != nil {
-		return "", fmt.Errorf("parse agents: %w", err)
+		return nil, fmt.Errorf("parse agents: %w", err)
 	}
+	var codeAgents, primaries, rest []string
 	for _, a := range out.Agents {
-		if a.AgentName == "CodeAgent" && a.Alias.ZhCN == "智能体" && a.ShowInIDE {
-			return a.AgentID, nil
+		if a.AgentID == "" {
+			continue
+		}
+		switch {
+		case a.AgentName == "CodeAgent" && a.Alias.ZhCN == "智能体" && a.ShowInIDE:
+			codeAgents = append(codeAgents, a.AgentID)
+		case a.Primary:
+			primaries = append(primaries, a.AgentID)
+		default:
+			rest = append(rest, a.AgentID)
 		}
 	}
-	for _, a := range out.Agents {
-		if a.Primary {
-			return a.AgentID, nil
-		}
-	}
-	if len(out.Agents) > 0 {
-		return out.Agents[0].AgentID, nil
-	}
-	return "", nil
+	return append(append(codeAgents, primaries...), rest...), nil
 }
 
 // fetchBuiltinModels GET /v1/model/builtin（Agent-Type: PromptCenter）。
@@ -484,17 +524,60 @@ func (c *Client) fetchBuiltinModels(accountID string, cred SignCredential) ([]Mo
 	return infos, nil
 }
 
-// ClaimBenefit 领取限时福利（幂等：已领取返回成功）。官方客户端打开模型菜单即调用。
+// ClaimResult 一次领取调用（POST /api/v1/benefit/claim）的返回体。
+//
+// GET 与 POST 的响应逐字节相同（实测 2026-09-21 抓包：两者 Content-Length 均 265、
+// create_time 一致），因此「本次是否真领到」无法靠方法或响应形状区分，
+// 只能拿调用前后的 create_time 比较。
+type ClaimResult struct {
+	CreateTime int64  `json:"create_time"`
+	UpdateTime int64  `json:"update_time"`
+	UserName   string `json:"user_name"`
+}
+
+// ClaimStatus 一次领取调用相对调用前状态的语义结论。
+type ClaimStatus int
+
+const (
+	// ClaimUnknown 上游未返回 create_time，无法判断。
+	ClaimUnknown ClaimStatus = iota
+	// ClaimNew create_time 被刷新：本次真的领到了。
+	ClaimNew
+	// ClaimExisting create_time 未变且非 0：此前已领过，本次是幂等空转。
+	ClaimExisting
+)
+
+// Status 以调用前的 create_time（before，0 表示调用前从未领取）为基线判定结论。
+//
+// 上游把「领取」做成了幂等操作：已领过时同样返回 error_code=0000，create_time
+// 保持不动。实测 POST 发生在 2026-09-22 00:43Z，返回的 create_time 仍是
+// 2026-09-17 13:51Z（早 4.45 天），即那次 POST 并未产生新领取。
+func (r ClaimResult) Status(before int64) ClaimStatus {
+	switch {
+	case r.CreateTime == 0:
+		return ClaimUnknown
+	case r.CreateTime != before:
+		return ClaimNew
+	default:
+		return ClaimExisting
+	}
+}
+
+// ClaimBenefit 领取限时福利（幂等：已领取返回成功且 create_time 不变）。
+// 官方客户端打开模型菜单即调用。
 //
 // 这是对账号的写操作；New 里默认开启自动领取（见 Client.SetBenefitAutoClaim），
 // 所以模型发现时会先领取一次；要关闭用 SetBenefitAutoClaim(false)。
-func (c *Client) ClaimBenefit(cred SignCredential) error {
+//
+// 返回体不再丢弃：调用方靠 ClaimResult.Status 区分「新领到」与「幂等空转」。
+func (c *Client) ClaimBenefit(cred SignCredential) (ClaimResult, error) {
+	var res ClaimResult
 	body, _ := json.Marshal(map[string]any{})
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.benefitURL(EpBenefitClaim), bytes.NewReader(body))
 	if err != nil {
-		return err
+		return res, err
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-Language", "zh-cn")
@@ -504,24 +587,25 @@ func (c *Client) ClaimBenefit(cred SignCredential) error {
 	signRequest(req, body, cred)
 	resp, err := c.http.Do(req)
 	if err != nil {
-		return err
+		return res, err
 	}
 	defer resp.Body.Close()
 	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if resp.StatusCode >= 400 {
-		return &ApiError{Code: resp.StatusCode, Status: resp.StatusCode, Message: truncateStr(string(raw), 300), Path: EpBenefitClaim}
+		return res, &ApiError{Code: resp.StatusCode, Status: resp.StatusCode, Message: truncateStr(string(raw), 300), Path: EpBenefitClaim}
 	}
 	var out struct {
-		ErrorCode string `json:"error_code"`
-		ErrorMsg  string `json:"error_msg"`
+		ErrorCode string      `json:"error_code"`
+		ErrorMsg  string      `json:"error_msg"`
+		Result    ClaimResult `json:"result"`
 	}
 	if err := json.Unmarshal(raw, &out); err != nil {
-		return fmt.Errorf("parse claim: %w", err)
+		return res, fmt.Errorf("parse claim: %w", err)
 	}
 	if out.ErrorCode != "0000" {
-		return fmt.Errorf("claim failed: error_code=%s msg=%s", out.ErrorCode, out.ErrorMsg)
+		return res, fmt.Errorf("claim failed: error_code=%s msg=%s", out.ErrorCode, out.ErrorMsg)
 	}
-	return nil
+	return out.Result, nil
 }
 
 // BenefitStatus 签到状态（GET /api/v1/benefit/claim）。
@@ -665,7 +749,7 @@ func (c *Client) fetchBenefitModels(accountID string, cred SignCredential) ([]Mo
 		return nil, fmt.Errorf("benefit source backoff")
 	}
 	if c.claimAuto.Load() {
-		if err := c.ClaimBenefit(cred); err != nil {
+		if _, err := c.ClaimBenefit(cred); err != nil {
 			Log("benefit claim: %v", err)
 		}
 	}
@@ -702,6 +786,7 @@ func (c *Client) fetchBenefitModels(accountID string, cred SignCredential) ([]Mo
 				ModelDesc     string `json:"model_desc"`
 				ContextWindow int64  `json:"context_window"`
 				MaxTokens     int64  `json:"max_tokens"`
+				Sort          int    `json:"sort"`
 			} `json:"models"`
 		} `json:"result"`
 	}
@@ -723,7 +808,7 @@ func (c *Client) fetchBenefitModels(accountID string, cred SignCredential) ([]Mo
 		infos = append(infos, ModelInfo{
 			ID: id, Name: id,
 			ContextWindow: m.ContextWindow, MaxTokens: m.MaxTokens, Desc: m.ModelDesc,
-			Benefit: true,
+			Benefit: true, SortOrder: m.Sort,
 		})
 	}
 	return infos, nil

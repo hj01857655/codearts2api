@@ -188,7 +188,6 @@ func (p *Pool) List() []map[string]any {
 			"nickname":          a.UserName,
 			"user_name":         a.UserName,
 			"default_model":     a.DefaultModel,
-			"credits":           int64(0), // CodeArts 无积分字段；面板仍显示
 			"disabled":          a.disabled,
 			"cooling":           cooling,
 			"until":             until,
@@ -206,8 +205,15 @@ func (p *Pool) List() []map[string]any {
 	return out
 }
 
-// Stats 汇总。
-func (p *Pool) Stats() (total, healthy, disabled, cooling int, credits int64) {
+// Stats 汇总账号池计数。
+//
+// 这里曾返回一个 credits 值，实现是 credits = healthy，注释自称「CodeArts 无积分
+// 概念，留给调用方作健康数使用」。该说法已被抓包证伪：上游
+// GET {snap}/snap-manager/v1/statistics/plugin 返回完整的积分套餐字段
+// （package_credit_amount / package_credit_used / package_credit_remain）。
+// 本项目尚未接入该端点，所以不再用一个重复的 healthy 冒充积分——宁可没有这个数，
+// 也不让面板拿到看着像积分、实际是账号数的假值。
+func (p *Pool) Stats() (total, healthy, disabled, cooling int) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	now := time.Now()
@@ -223,7 +229,6 @@ func (p *Pool) Stats() (total, healthy, disabled, cooling int, credits int64) {
 		}
 		a.mu.Unlock()
 	}
-	credits = int64(healthy) // CodeArts 无积分概念，该返回值留给调用方作健康数使用
 	return
 }
 

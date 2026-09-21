@@ -3,6 +3,7 @@ package server
 import (
 	"encoding/json"
 	"io"
+	"log"
 	"net/http"
 	"strings"
 	"sync"
@@ -13,7 +14,7 @@ import (
 
 // adminOverview 面板总览。
 func (h *Handler) adminOverview(w http.ResponseWriter, r *http.Request) {
-	total, healthy, disabled, cooling, credits := h.cfg.Pool.Stats()
+	total, healthy, disabled, cooling := h.cfg.Pool.Stats()
 	models := h.modelList()
 	ids := make([]map[string]any, 0, len(models))
 	for _, m := range models {
@@ -28,7 +29,6 @@ func (h *Handler) adminOverview(w http.ResponseWriter, r *http.Request) {
 			"healthy":  healthy,
 			"disabled": disabled,
 			"cooling":  cooling,
-			"credits":  credits,
 		},
 		"accounts": h.cfg.Pool.List(),
 		"models":   ids,
@@ -66,11 +66,14 @@ func readUIDBody(r *http.Request) (uidBody, error) {
 type actionResult struct {
 	UID     string `json:"uid"`
 	OK      bool   `json:"ok"`
-	Credits int64  `json:"credits,omitempty"`
 	Message string `json:"message,omitempty"`
 }
 
-// adminCredits CodeArts 无积分；复用为 Validate/刷新状态。
+// adminCredits 刷新账号 token 状态（路径沿用历史命名 /admin/api/credits）。
+//
+// 早期逆向结论「CodeArts 无积分」已被抓包证伪（见 pool.Stats 的注释），但本端点
+// 从来不是查积分用的：它只做 Validate / 刷新 token。真正的积分来自上游
+// GET {snap}/snap-manager/v1/statistics/plugin，本项目尚未接入。
 func (h *Handler) adminCredits(w http.ResponseWriter, r *http.Request) {
 	body, err := readUIDBody(r)
 	if err != nil {
@@ -166,19 +169,36 @@ func (h *Handler) adminCheckin(w http.ResponseWriter, r *http.Request) {
 		}
 		token, ak, sk := acct.Auth.Credentials()
 		cred := upstream.SignCredential{AccessKeyID: ak, SecretAccessKey: sk, SecurityToken: token}
-		// 先领取（幂等）
-		if err := h.cfg.Upstream.ClaimBenefit(cred); err != nil {
-			res.Message = "claim: " + err.Error()
+		// 领取前先取基线：GET/POST 响应体逐字节相同（见 upstream.ClaimResult），
+		// 只有拿调用前后的 create_time 比较，才分得清「新领到」与「幂等空转」。
+		// 基线取失败不阻断领取，只降级为不确定结论。
+		before, serr := h.cfg.Upstream.BenefitStatus(cred)
+		if serr != nil {
+			log.Printf("claim baseline status failed uid=%s: %v", uid, serr)
+			before = 0
+		}
+		// 领取（幂等）
+		claim, cerr := h.cfg.Upstream.ClaimBenefit(cred)
+		if cerr != nil {
+			res.Message = "claim: " + cerr.Error()
 			results = append(results, res)
 			continue
 		}
+		switch claim.Status(before) {
+		case upstream.ClaimNew:
+			res.Message = "本次已领到当日额度"
+		case upstream.ClaimExisting:
+			res.Message = "此前已领过，本次未重复发放"
+		default:
+			res.Message = "领取成功（上游未返回时间，无法判断是否本次新领）"
+		}
+		res.CreateTime = claim.CreateTime
 		// 再查余额
 		if info, berr := h.cfg.Upstream.BenefitBalanceDetail(cred); berr != nil {
 			res.OK = true
-			res.Message = "claimed, balance: " + berr.Error()
+			res.Message = appendMsg(res.Message, "balance: "+berr.Error())
 		} else {
 			res.OK = true
-			res.Message = "claimed"
 			fillBalance(&res, info)
 		}
 		results = append(results, res)
@@ -291,7 +311,7 @@ func (h *Handler) adminReload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.cfg.Pool.SyncToDir(auths)
-	total, healthy, _, _, _ := h.cfg.Pool.Stats()
+	total, healthy, _, _ := h.cfg.Pool.Stats()
 	writeJSON(w, http.StatusOK, map[string]any{
 		"ok": true, "message": "已重载 auths", "loaded": len(auths), "total": total, "healthy": healthy,
 	})
