@@ -348,7 +348,6 @@ function render(data){
           ${a.disabled
             ? `<button class="btn" data-act="enable" data-uid="${escapeAttr(a.uid)}">启用</button>`
             : `<button class="btn danger" data-act="disable" data-uid="${escapeAttr(a.uid)}">禁用</button>`}
-          ${a.cooling && !a.disabled ? `<button class="btn" data-act="clear" data-uid="${escapeAttr(a.uid)}">清冷却</button>` : ""}
         </div></td>
       </tr>`;
     }).join("");
@@ -385,6 +384,14 @@ async function showApp(){
     await loadOverview();
     // 后台拉一次福利额度（不阻塞首屏）
     api("/admin/api/benefit/status").then(d => { if (d.results) renderBenefit(d.results); }).catch(() => {});
+    // 自动刷新：有账号冷却中时每 15s 刷新一次面板，冷却到期自动恢复
+    setInterval(async () => {
+      try {
+        const d = await api("/admin/api/overview");
+        const cooling = (d.accounts||[]).some(a => a.cooling && !a.disabled);
+        if (cooling) render(d);
+      } catch {}
+    }, 15000);
   } catch (e) {
     toast("登录失败: " + e.message, false);
     clearKey();
@@ -482,7 +489,6 @@ $("acctBody").addEventListener("click", async (e) => {
     }
     else if (act === "enable") await runAction("/admin/api/accounts/enable", {uid});
     else if (act === "disable") await runAction("/admin/api/accounts/disable", {uid, reason:"manual disable from panel"});
-    else if (act === "clear") await runAction("/admin/api/accounts/clear-cooldown", {uid});
   } finally {
     btn.disabled = false;
   }

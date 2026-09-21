@@ -72,6 +72,7 @@ func main() {
 		}(),
 		QueueMaxAttempts: cfg.QueueMaxAttempts,
 		ConvStateFile:    cfg.StateFile + ".chats.json",
+		ModelCacheFile:   cfg.StateFile + ".models.json",
 		WatchInfo: map[string]any{
 			"enabled":              cfg.Watch.Enabled,
 			"poll_minutes":         cfg.Watch.PollMinutes,

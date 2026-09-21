@@ -41,6 +41,7 @@ type Config struct {
 	WatchInfo        map[string]any
 	AuthDir          string
 	Listen           string
+	ModelCacheFile   string
 	// OAuthClient 短超时客户端，用于 WebUI 登录换取 token（可注入测试端点）。
 	OAuthClient *upstream.Client
 	// LoginConfig WebUI 登录配置（client_id 以官方客户端为准）。
@@ -54,6 +55,49 @@ var dynamicModelsCache struct {
 	ids      []upstream.ModelInfo
 	fetched  time.Time
 	lastFail time.Time
+}
+
+// saveModelCache 把发现的模型列表持久化到磁盘，重启时先加载缓存再异步刷新。
+func (h *Handler) saveModelCache(infos []upstream.ModelInfo) {
+	if h.cfg.ModelCacheFile == "" || len(infos) == 0 {
+		return
+	}
+	payload := struct {
+		UpdatedAt int64                  `json:"updated_at"`
+		Models    []upstream.ModelInfo   `json:"models"`
+	}{
+		UpdatedAt: time.Now().Unix(),
+		Models:    infos,
+	}
+	raw, _ := json.MarshalIndent(payload, "", "  ")
+	tmp := h.cfg.ModelCacheFile + ".tmp"
+	if os.WriteFile(tmp, raw, 0644) != nil {
+		return
+	}
+	os.Rename(tmp, h.cfg.ModelCacheFile)
+}
+
+// loadModelCache 从磁盘加载模型缓存到内存，避免冷启动时 /v1/models 为空。
+func (h *Handler) loadModelCache() {
+	if h.cfg.ModelCacheFile == "" {
+		return
+	}
+	raw, err := os.ReadFile(h.cfg.ModelCacheFile)
+	if err != nil {
+		return
+	}
+	var cached struct {
+		UpdatedAt int64                `json:"updated_at"`
+		Models    []upstream.ModelInfo `json:"models"`
+	}
+	if json.Unmarshal(raw, &cached) != nil || len(cached.Models) == 0 {
+		return
+	}
+	dynamicModelsCache.Lock()
+	dynamicModelsCache.ids = cached.Models
+	dynamicModelsCache.fetched = time.Now().Add(-dynamicModelsTTL + 5*time.Minute) // 标记为即将过期，触发后台刷新
+	dynamicModelsCache.Unlock()
+	log.Printf("loaded %d models from disk cache (%s)", len(cached.Models), h.cfg.ModelCacheFile)
 }
 
 // staticModel 静态兜底模型：动态发现失败时 /v1/models 仍能列出实测可用模型。
@@ -154,8 +198,10 @@ func NewHandler(cfg Config) *Handler {
 		convAcct: map[string]string{},
 	}
 	h.loadChats()
+	h.loadModelCache()
 	h.mux.HandleFunc("POST /v1/chat/completions", h.withAuth(h.chatCompletions))
 	h.mux.HandleFunc("GET /v1/models", h.withAuth(h.models))
+	h.mux.HandleFunc("GET /v1/models/{id}", h.withAuth(h.modelDetail))
 	h.mux.HandleFunc("GET /status", h.withAuth(h.status))
 	h.mux.HandleFunc("GET /healthz", h.healthz)
 	// WorkBuddy 风格控制台（页面不鉴权，API 走 Bearer）
@@ -180,6 +226,14 @@ func NewHandler(cfg Config) *Handler {
 }
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	// CORS：所有响应都带跨域头，OPTIONS 预检直接返回 204。
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+	w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+	if r.Method == http.MethodOptions {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
 	h.mux.ServeHTTP(w, r)
 }
 
@@ -405,6 +459,22 @@ func (h *Handler) models(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// modelDetail 返回单个模型详情（GET /v1/models/{id}）。
+func (h *Handler) modelDetail(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if id == "" {
+		writeOpenAIError(w, http.StatusBadRequest, "invalid_request", "missing model id")
+		return
+	}
+	for _, m := range h.modelList() {
+		if m["id"] == id {
+			writeJSON(w, http.StatusOK, m)
+			return
+		}
+	}
+	writeOpenAIError(w, http.StatusNotFound, "model_not_found", "model '"+id+"' not found")
+}
+
 // modelList 动态获取模型列表并包装成 OpenAI 格式。
 func (h *Handler) modelList() []map[string]any {
 	entries := modelEntries(h.fetchDynamicModels())
@@ -598,6 +668,7 @@ func (h *Handler) fetchDynamicModels() []upstream.ModelInfo {
 	dynamicModelsCache.fetched = time.Now()
 	dynamicModelsCache.lastFail = time.Time{} // 成功则清空负缓存
 	dynamicModelsCache.Unlock()
+	h.saveModelCache(infos)
 	return infos
 }
 
