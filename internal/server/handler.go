@@ -21,6 +21,7 @@ import (
 
 	"codearts2api/internal/auth"
 	"codearts2api/internal/pool"
+	"codearts2api/internal/update"
 	"codearts2api/internal/upstream"
 )
 
@@ -49,6 +50,12 @@ type Config struct {
 	LoginConfig upstream.LoginConfig
 	// OAuthCallbackHost 可选：覆盖授权链接回调 host（如 https://oneapi.example.com/codearts）。
 	OAuthCallbackHost string
+
+	// Version 服务自身版本（构建期注入），供 /status 与在线更新比对。
+	Version string
+
+	// UpdateRepo 在线更新的 GitHub 仓库（owner/name）；为空则不启用更新功能。
+	UpdateRepo string
 }
 
 var dynamicModelsCache struct {
@@ -147,6 +154,11 @@ type Handler struct {
 
 	loginMu sync.Mutex
 	logins  map[string]*pendingLogin
+
+	// updater 在线更新服务；未配置 UpdateRepo 时为 nil。
+	updater *update.Service
+	// updateMu 串行化更新/回滚/重启，避免重复点触发并发替换。
+	updateMu sync.Mutex
 }
 
 // pendingLogin WebUI 登录中间状态。
@@ -200,6 +212,10 @@ func NewHandler(cfg Config) *Handler {
 	}
 	h.loadChats()
 	h.loadModelCache()
+	// 在线更新：配置了 update_repo 才构造；未配置时面板会在检测时得到明确提示。
+	if cfg.UpdateRepo != "" {
+		h.updater = update.New(cfg.UpdateRepo, cfg.Version)
+	}
 	h.mux.HandleFunc("POST /v1/chat/completions", h.withAuth(h.chatCompletions))
 	h.mux.HandleFunc("GET /v1/models", h.withAuth(h.models))
 	h.mux.HandleFunc("GET /v1/models/{id}", h.withAuth(h.modelDetail))
@@ -216,6 +232,10 @@ func NewHandler(cfg Config) *Handler {
 	h.mux.HandleFunc("GET /admin/api/benefit/status", h.withAuth(h.adminBenefitStatus))
 	h.mux.HandleFunc("POST /admin/api/keepalive", h.withAuth(h.adminKeepalive))
 	h.mux.HandleFunc("POST /admin/api/reload", h.withAuth(h.adminReload))
+	h.mux.HandleFunc("GET /admin/api/update/check", h.withAuth(h.adminUpdateCheck))
+	h.mux.HandleFunc("POST /admin/api/update/apply", h.withAuth(h.adminUpdateApply))
+	h.mux.HandleFunc("POST /admin/api/update/rollback", h.withAuth(h.adminUpdateRollback))
+	h.mux.HandleFunc("POST /admin/api/update/restart", h.withAuth(h.adminUpdateRestart))
 	h.mux.HandleFunc("POST /admin/api/accounts/enable", h.withAuth(h.adminEnable))
 	h.mux.HandleFunc("POST /admin/api/accounts/disable", h.withAuth(h.adminDisable))
 	h.mux.HandleFunc("POST /admin/api/accounts/clear-cooldown", h.withAuth(h.adminClearCooldown))
@@ -263,7 +283,11 @@ func (h *Handler) healthz(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) status(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]any{"accounts": h.cfg.Pool.List()})
+	writeJSON(w, http.StatusOK, map[string]any{
+		"service":  "codearts2api",
+		"version":  h.cfg.Version,
+		"accounts": h.cfg.Pool.List(),
+	})
 }
 
 // oauthCallback 本地回调：浏览器同机时由 portal 携带 code 跳到这里。

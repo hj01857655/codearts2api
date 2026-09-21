@@ -22,6 +22,7 @@ func (h *Handler) adminOverview(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"service": "codearts2api",
 		"region":  "cn",
+		"version": h.cfg.Version,
 		"stats": map[string]any{
 			"total":    total,
 			"healthy":  healthy,

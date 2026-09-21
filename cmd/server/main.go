@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"flag"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -18,9 +19,24 @@ import (
 	"codearts2api/internal/upstream"
 )
 
+// 构建期由 -ldflags 注入（见 .goreleaser.yaml 与 Makefile）：
+//   -X main.version=v1.2.3 -X main.commit=abc1234 -X main.buildDate=2026-09-21T...
+// 未注入时保持 dev，供本地开发与「非 release 构建」区分。
+var (
+	version   = "dev"
+	commit    = "none"
+	buildDate = "unknown"
+)
+
 func main() {
 	cfgPath := flag.String("config", "config.json", "path to config json")
+	showVersion := flag.Bool("version", false, "print version and exit")
 	flag.Parse()
+
+	if *showVersion {
+		fmt.Printf("codearts2api %s (commit %s, built %s)\n", version, commit, buildDate)
+		return
+	}
 
 	cfg, err := Load(*cfgPath)
 	if err != nil {
@@ -83,6 +99,8 @@ func main() {
 		},
 		AuthDir:           cfg.AuthDir,
 		Listen:            cfg.Listen,
+		Version:           version,
+		UpdateRepo:        cfg.UpdateRepo,
 		OAuthClient:       upstream.New(15 * time.Second),
 		LoginConfig:       loginConfig(cfg),
 		OAuthCallbackHost: cfg.OAuthCallbackHost,
@@ -105,7 +123,7 @@ func main() {
 		_ = srv.Shutdown(shutdownCtx)
 	}()
 
-	log.Printf("codearts2api listening on %s (api_key=%v)", cfg.Listen, cfg.APIKey != "")
+	log.Printf("codearts2api %s listening on %s (commit=%s api_key=%v)", version, cfg.Listen, commit, cfg.APIKey != "")
 	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		log.Fatalf("http: %v", err)
 	}

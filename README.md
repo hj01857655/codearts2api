@@ -72,6 +72,30 @@ curl -X POST http://127.0.0.1:7866/v1/chat/completions \
 - **主题**：明暗共四套色板（石墨、午夜、浅色、暖沙），在设置菜单里切换，选择存在浏览器本地；所有文字与状态色都按 WCAG AA（正文 4.5:1）取值。
 - **授权登录**：点「＋ 授权登录」获取链接，浏览器完成华为云登录后账号自动落盘并载入账号池，无需重启；部分浏览器会停在 `127.0.0.1` 回调，此时把地址栏完整地址粘贴进弹窗的「远程浏览器回调中转」即可。
 - **冷却**：只按时间自动恢复，面板没有手动清除按钮；有账号冷却时面板会定期补一次读数，到期自动回到可用态。
+- **在线更新**：设置菜单里有「版本」分组（当前版本 + 检测更新 / 立即更新 / 回滚 / 重启）。详见 [在线更新](#在线更新) 与 [docs/online-update.md](docs/online-update.md)
+
+### 在线更新
+
+部署后的实例可在控制台设置菜单（顶栏齿轮）里点「检测更新」，从 GitHub Releases 拉新版：
+下载当前平台归档 → 校验 SHA256 → 原子替换二进制 → 你确认后重启生效。
+
+```jsonc
+"update_repo": "hj01857655/codearts2api"   // 或 CA2A_UPDATE_REPO；留空则关闭在线更新
+```
+
+- 重启不调 `systemctl`（那需要 sudo），而是进程自行退出，交给 unit 的 `Restart=always`
+  拉起（`deploy/codearts2api.service` 已配置）。
+- 替换前旧版会留在 `codearts2api.backup`，可随时「回滚上一版」。
+- **只支持 Linux + systemd 直装**。容器内会被下次 `docker compose up -d` 覆盖，
+  因此端点会直接拒绝并提示改用镜像；Windows 无法自替换运行中的文件。
+- 只发 `cmd/server` 一个二进制（面板经 `//go:embed` 已打进它），`login`/`credit`/`apply`
+  不参与在线更新。
+- 发版：打 `v*` tag 触发 `.github/workflows/release.yml`（goreleaser），产出
+  `codearts2api_<os>_<arch>.tar.gz` 与 `checksums.txt`。
+
+`codearts2api -version` 可随时确认当前二进制版本；`GET /status` 也带 `version` 字段。
+
+详细设计与取舍见 [docs/online-update.md](docs/online-update.md)。
 
 ### 跨域与单模型查询
 
@@ -190,6 +214,7 @@ docker compose up -d --build
 | `CA2A_QUEUE_MAX_ATTEMPTS` | 排队重试次数上限（约 5 分钟） | `30` |
 | `CA2A_BENEFIT_AUTO_CLAIM` | 发现模型时自动领取限时福利（幂等；关闭则福利模型不可用） | `true` |
 | `CA2A_LOGIN_CLIENT_ID` | 控制台授权登录使用的 OAuth client_id | 已有账号的取值，否则 `codearts-agent` |
+| `CA2A_UPDATE_REPO` | 在线更新使用的 GitHub 仓库（owner/name） | 见 `config.json` 的 `update_repo` |
 
 ## 目录结构
 
@@ -206,10 +231,12 @@ internal/auth/     auth 文件读写
 internal/upstream/ 云端客户端（登录/聊天/SSE/模型发现）+ 逆向常量
 internal/pool/     账号池（token 校验/自动刷新/冷却/并发控制）
 internal/scheduler/ token 续期看门狗（含保活机制）
+internal/update/    在线更新（检测/校验/原子替换/回滚，仅标准库）
 internal/server/   OpenAI 兼容路由 + 管理控制台
-                   panel.html / panel.go（内嵌面板）、admin.go（面板 API）、oauth.go（授权登录）
+                   panel.html / panel.go（内嵌面板）、admin.go（面板 API）、
+                   admin_update.go（在线更新端点）、oauth.go（授权登录）
 deploy/            systemd unit 样例
-docs/              逆向过程与接口清单
+docs/              逆向记录与接口清单；在线更新设计说明（online-update.md）
 ```
 
 ## 免责声明

@@ -331,6 +331,13 @@ button.chip:hover{border-color:var(--accent);color:var(--ink)}
           <button data-theme-opt="light" role="menuitem"><span class="sw" style="background:linear-gradient(135deg,#ffffff 45%,#0284c7)"></span>浅色<span class="tick">✓</span></button>
           <button data-theme-opt="sand" role="menuitem"><span class="sw" style="background:linear-gradient(135deg,#fffdfa 45%,#d97706)"></span>暖沙<span class="tick">✓</span></button>
           <hr>
+          <div class="grp">版本</div>
+          <div class="who" id="menuVersion">v-</div>
+          <button id="btnUpdateCheck" role="menuitem">检测更新</button>
+          <button id="btnUpdateApply" class="hidden" role="menuitem">立即更新</button>
+          <button id="btnUpdateRollback" class="hidden" role="menuitem">回滚上一版</button>
+          <button id="btnUpdateRestart" class="hidden" role="menuitem">重启服务</button>
+          <hr>
           <div class="grp">会话</div>
           <div class="who" id="menuKey">未设置密钥</div>
           <button id="btnLogout" class="danger" role="menuitem">退出登录</button>
@@ -522,6 +529,7 @@ const state = {
   log: [],
   logFilter: "all",
   refreshing: false,
+  updateReady: false,
   oauth: { id: "", timer: null, busy: false },
 };
 
@@ -760,6 +768,7 @@ async function loadOverview(){
     const data = await api("/admin/api/overview");
     state.overview = data;
     state.accounts = data.accounts || [];
+    if (data.version && !state.updateChecked) $("menuVersion").textContent = "当前 " + data.version;
     $("navBase").textContent = (data.region || "cn") + " · " + (location.host || "本地");
     $("subMeta").textContent = "更新于 " + new Date().toLocaleTimeString();
     renderAccounts();
@@ -875,6 +884,72 @@ $("btnLogout").onclick = () => {
   state.accounts = [];
   logLine("op", "退出登录");
   showLogin("已退出登录，请输入 API Key 重新进入。");
+};
+
+/* ── 在线更新 ────────────────────────────────────────────────────── */
+/* 只做「按钮 → 请求 → toast + 操作记录」：更新是低频运维动作，不引入新的交互范式。
+   替换完二进制必须重启才生效，所以需要用户再点一下重启（不自动重启，避免打断在途流式请求）。 */
+function renderUpdate(st){
+  if (!st) return;
+  state.updateChecked = true;
+  $("menuVersion").textContent = "当前 " + (st.current || "-") + (st.latest ? " · 最新 " + st.latest : "");
+  $("btnUpdateApply").hidden = !(st.supported && st.has_update);
+  $("btnUpdateRollback").hidden = !st.can_rollback;
+}
+function updateLabel(ok, msg){
+  toast(msg, ok);
+  logLine(ok ? "op" : "err", "在线更新 · " + msg);
+}
+$("btnUpdateCheck").onclick = async () => {
+  openMenu(false);
+  try {
+    const d = await api("/admin/api/update/check");
+    if (d.configured === false){
+      $("menuVersion").textContent = "未配置 update_repo";
+      updateLabel(false, d.message || "未配置在线更新");
+      return;
+    }
+    renderUpdate(d.status);
+    state.updateReady = d.status && d.status.has_update;
+    updateLabel(true, d.message || "已检查");
+  } catch (e){
+    updateLabel(false, "检测失败：" + e.message);
+    if (e.status === 401) showLogin("密钥不正确，请重试。");
+  }
+};
+$("btnUpdateApply").onclick = async () => {
+  openMenu(false);
+  updateLabel(true, "开始下载更新，请稍候…");
+  try {
+    const d = await api("/admin/api/update/apply", { method: "POST", body: "{}" });
+    renderUpdate(d.status);
+    // 已替换但需重启：把重启按钮显出来，同时提示。
+    $("btnUpdateRestart").hidden = false;
+    updateLabel(!!d.ok, d.message || "已更新");
+  } catch (e){
+    updateLabel(false, "更新失败：" + e.message);
+    if (e.status === 401) showLogin("密钥不正确，请重试。");
+  }
+};
+$("btnUpdateRollback").onclick = async () => {
+  openMenu(false);
+  try {
+    const d = await api("/admin/api/update/rollback", { method: "POST", body: "{}" });
+    $("btnUpdateRestart").hidden = false;
+    updateLabel(!!d.ok, d.message || "已回滚");
+  } catch (e){
+    updateLabel(false, "回滚失败：" + e.message);
+  }
+};
+$("btnUpdateRestart").onclick = async () => {
+  openMenu(false);
+  try {
+    const d = await api("/admin/api/update/restart", { method: "POST", body: "{}" });
+    updateLabel(!!d.ok, d.message || "正在重启");
+  } catch (e){
+    // 进程退出会让请求断开，这是预期行为，不是失败。
+    updateLabel(true, "服务正在重启，稍后刷新页面");
+  }
 };
 
 /* ── 顶栏与账号表动作 ─────────────────────────────────────────────── */

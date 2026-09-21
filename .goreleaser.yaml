@@ -1,0 +1,45 @@
+version: 2
+
+project_name: codearts2api
+
+builds:
+  - id: codearts2api
+    main: ./cmd/server
+    binary: codearts2api
+    env:
+      - CGO_ENABLED=0
+    goos: [linux]
+    goarch: [amd64, arm64]
+    ldflags:
+      - -s -w
+      - -X main.version={{.Version}}
+      - -X main.commit={{.Commit}}
+      - -X main.buildDate={{.Date}}
+  # 只编发服务端：面板经 //go:embed 打进这个二进制，自更新替换的就是它。
+  # login / credit / apply 等运维命令不参与在线更新，需要时本地 make 或 go run。
+archives:
+  # 归档名必须与 internal/update 的 archiveName() 一致：codearts2api_<os>_<arch>
+  - id: default
+    formats: [tar.gz]
+    name_template: "{{ .ProjectName }}_{{ .Os }}_{{ .Arch }}"
+    files:
+      - config.example.json
+      - deploy/codearts2api.service
+
+checksum:
+  name_template: checksums.txt
+  algorithm: sha256
+
+release:
+  draft: false
+  prerelease: auto
+  name_template: "CodeArts2API {{.Version}}"
+
+changelog:
+  use: github
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^chore:"

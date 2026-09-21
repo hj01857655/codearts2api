@@ -53,6 +53,10 @@ type Config struct {
 	// 返回 InferHub.4004.200 benefit not found。置 false 可关掉这个写操作。
 	BenefitAutoClaim bool `json:"benefit_auto_claim"`
 
+	// UpdateRepo 在线更新使用的 GitHub 仓库（owner/name）。
+	// 留空则控制台不提供在线更新入口。
+	UpdateRepo string `json:"update_repo"`
+
 	Upstream struct {
 		TimeoutSeconds int `json:"timeout_seconds"`
 	} `json:"upstream"`
@@ -223,6 +227,9 @@ func applyEnv(c *Config) {
 	}
 	if v := os.Getenv("CA2A_BENEFIT_AUTO_CLAIM"); v != "" {
 		c.BenefitAutoClaim = v == "1" || strings.EqualFold(v, "true")
+	}
+	if v := os.Getenv("CA2A_UPDATE_REPO"); v != "" {
+		c.UpdateRepo = v
 	}
 }
 
