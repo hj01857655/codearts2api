@@ -1,28 +1,99 @@
+<div align="center">
+
 # CodeArts2API
 
-> 华为云 CodeArts Agent（盘古助手/码道）的 OpenAI 兼容代理。**无需运行 CodeArts Agent
-> 客户端**，纯 Go 直连华为云 API，多账号轮转 + token 自动续期 + Web 管理控制台。
+**把华为云 CodeArts Agent 账号变成 OpenAI 兼容 API 的多账号网关**
 
-## 参考项目
+无需运行 CodeArts Agent 客户端 · 纯 Go 直连华为云 API · 多账号轮转 · token 自动续期 · Web 管理控制台
 
-本项目是 [Sliverkiss](https://github.com/Sliverkiss) 同系列开源项目的延伸实现，架构与运维形态参考了以下仓库：
+[![Go](https://img.shields.io/badge/Go-1.22-00ADD8?logo=go&logoColor=white&style=flat-square)](go.mod)
+[![API](https://img.shields.io/badge/API-OpenAI_Compatible-412991?style=flat-square)](#api)
+[![Platform](https://img.shields.io/badge/Platform-linux%20amd64%20%2F%20arm64-333333?style=flat-square)](#部署systemd--docker)
+[![Release](https://img.shields.io/github/v/release/hj01857655/codearts2api?style=flat-square&color=2496ED)](https://github.com/hj01857655/codearts2api/releases)
+[![License](https://img.shields.io/github/license/hj01857655/codearts2api?style=flat-square&color=green)](LICENSE)
 
-- [workbuddy2api](https://github.com/Sliverkiss/workbuddy2api) — WorkBuddy CN OpenAI 兼容反代（账号池 / 轮转 / 签到架构）
-- [traework2api](https://github.com/Sliverkiss/traework2api) — TRAE Work OpenAI 兼容反代（零依赖 Go 骨架）
-- [qoderwork2api](https://github.com/Sliverkiss/qoderwork2api) — QoderWork CN OpenAI 兼容反代（OAuth 授权流程）
+</div>
 
-感谢原作者的开源与优秀设计。
+---
 
-本仓库是本项目在 GitHub 上的个人维护分支：[hj01857655/codearts2api](https://github.com/hj01857655/codearts2api)。
+CodeArts2API 是一个自托管的 **OpenAI 兼容上游网关**：把 CodeArts Agent（盘古助手 / 码道）
+账号包装成标准的 `/v1/chat/completions` 与 `/v1/models`，现有 OpenAI SDK、前端与工具
+**零改造接入**。网关侧负责账号池调度、token 自动续期、冷却熔断与管理控制台。
 
-## 快速开始（Ubuntu / Linux）
+## 目录
+
+- [特性](#特性)
+- [快速开始](#快速开始)
+- [配置说明](#配置说明)
+- [API](#api)
+- [Web 控制台](#web-控制台)
+- [在线更新](#在线更新)
+- [使用说明](#使用说明)
+- [部署（systemd / Docker）](#部署systemd--docker)
+- [项目结构](#项目结构)
+- [相关文档](#相关文档)
+- [致谢](#致谢)
+- [免责声明](#免责声明)
+- [License](#license)
+
+## 特性
+
+- **OpenAI 兼容** — `POST /v1/chat/completions`（流式 / 非流式）、`GET /v1/models`、
+  `GET /v1/models/{id}`；流式按 OpenAI SSE 协议输出，非流式带 `usage`。
+- **多账号池** — 账号健康状态（可用 / 冷却 / 禁用）、单账号并发限制、故障自动换号与冷却，
+  避免单号过载与雪崩。
+- **token 自动续期** — 后台看门狗按 `refresh_skew_minutes` 提前刷新，另按保活窗口发送心跳；
+  续期写回轮转后的 `refresh_token`。
+- **会话续接** — 多轮上下文按账号自动续接（chat_id 分组），也可用请求头
+  `X-Codearts-Chat-Id` 或 body 的 `conversation_id` 显式指定。
+- **授权登录免重启** — 控制台内点「授权登录」完成华为云 OAuth，账号落盘后自动载入池。
+- **限时福利自动领取** — 福利（免费套餐）模型在模型发现时幂等领取，聊天时自动附加上游要求的
+  `maas_type: benefit` 头（按发起请求的账号判定）。
+- **模型可用性探测** — 上游模型目录会列出账号实际未注册的模型，服务周期性探测并过滤，
+  只暴露真实可用的条目。
+- **Web 管理控制台** — 面板经 `//go:embed` 打进二进制，账号池 / 福利额度 / 模型 / 调度 /
+  操作记录五个视图，明暗四套色板。
+- **在线更新** — 控制台一键检测 / 升级 / 回滚，只发一个二进制（见 [在线更新](#在线更新)）。
+- **零第三方依赖** — 只用 Go 标准库（无 `go.sum`），单文件部署。
+
+## 快速开始
+
+### 环境要求
+
+- 一个或多个华为云账号，用于 OAuth 登录
+- Go ≥ 1.22（仅源码构建需要）；运行时不依赖任何第三方库
+- Linux（amd64 / arm64）可直装自更新；Docker 部署见[部署](#部署systemd--docker)
+
+### 1. 获取二进制
+
+```bash
+# 从 Release 下载（linux/amd64；arm64 换 codearts2api_linux_arm64.tar.gz）
+mkdir -p bin
+curl -fsSL https://github.com/hj01857655/codearts2api/releases/latest/download/codearts2api_linux_amd64.tar.gz \
+  | tar -xz -C bin/ codearts2api
+```
+
+或从源码构建：
 
 ```bash
 make linux            # bin/ 下 4 个 Linux 静态二进制
-make test
+make windows          # bin/ 下 4 个 Windows 二进制
+make test             # 跑全部测试
 ```
 
-### 登录（华为云账号）
+### 2. 准备配置
+
+```bash
+cp config.example.json config.json
+```
+
+密钥三选一（详见[配置说明](#配置说明)）；没有密钥服务会**拒绝启动**：
+
+```bash
+export CA2A_API_KEY=$(openssl rand -hex 24)
+```
+
+### 3. 登录账号
 
 ```bash
 # 本机有浏览器
@@ -31,20 +102,16 @@ make test
 # 服务器（无浏览器）：打印链接，任意机器浏览器打开，ticket 轮询下发
 ./login.sh -print-only
 
-# 凭证落盘 auths/codearts-{user_id}.json
+# 凭证落盘 auths/codearts-{user_id}.json（0600），可重复执行添加多账号
 ```
 
-### 启动
+### 4. 启动并验证
 
 ```bash
-cp config.example.json config.json
-export CA2A_API_KEY=你的随机密钥
 ./bin/codearts2api -config config.json
 ```
 
-### 验证 + 管理控制台
-
-```bash
+另一个终端验证：
 curl http://127.0.0.1:7866/healthz
 curl http://127.0.0.1:7866/v1/models -H "Authorization: Bearer $CA2A_API_KEY"
 curl -X POST http://127.0.0.1:7866/v1/chat/completions \
@@ -56,7 +123,84 @@ curl -X POST http://127.0.0.1:7866/v1/chat/completions \
 多轮上下文按账号自动续接（chat_id 分组）；也可用请求头
 `X-Codearts-Chat-Id: <chatId>` 或 body 里 `conversation_id` 显式指定会话。
 
-### Web 控制台
+`codearts2api -version` 可随时确认当前二进制版本；`GET /status` 也带 `version` 字段。
+
+命令行的其他子命令（`login` / `credit` / `apply` / `models` / `benefit` / `probe` /
+`chatdebug`）见[项目结构](#项目结构)与各自的 `go run ./cmd/<name> -h`。
+
+## 配置说明
+
+### 环境变量
+
+除 `config.json` 外，以下环境变量可覆盖同名配置：
+
+| 变量名 | 说明 | 默认值 |
+|--------|------|--------|
+| `CA2A_API_KEY` | API 访问密钥（**必填**，缺失则拒绝启动） | - |
+| `CA2A_LISTEN` | 监听地址 | `:7866` |
+| `CA2A_AUTH_DIR` | 凭证目录 | `./auths` |
+| `CA2A_STATE_FILE` | 状态文件 | `./data/state.json` |
+| `CA2A_DEFAULT_MODEL` | 默认模型 | 见 `config.json` |
+| `CA2A_OAUTH_CALLBACK_HOST` | OAuth 回调主机 | - |
+| `CA2A_WATCH_ENABLED` | 调度器开关 | `true` |
+| `CA2A_WATCH_POLL_MINUTES` | 轮询间隔（分钟） | `30` |
+| `CA2A_WATCH_REFRESH_SKEW` | 提前刷新时间（分钟） | `30` |
+| `CA2A_WATCH_KEEPALIVE_INTERVAL` | 保活间隔（分钟） | `15` |
+| `CA2A_MAX_CONCURRENT` | 单账号最大并发 | `5` |
+| `CA2A_KEEPALIVE_WINDOW` | 保活窗口 | `10m` |
+| `CA2A_QUEUE_RETRY_SECONDS` | 上游并发/TPM 排队时的重试间隔（秒） | `10` |
+| `CA2A_QUEUE_MAX_ATTEMPTS` | 排队重试次数上限（约 5 分钟） | `30` |
+| `CA2A_BENEFIT_AUTO_CLAIM` | 发现模型时自动领取限时福利（幂等；关闭则福利模型不可用） | `true` |
+| `CA2A_LOGIN_CLIENT_ID` | 控制台授权登录使用的 OAuth client_id | 已有账号的取值，否则 `codearts-agent` |
+| `CA2A_UPDATE_REPO` | 在线更新使用的 GitHub 仓库（owner/name） | 见 `config.json` 的 `update_repo` |
+
+### config.json
+
+`config.example.json` 可直接复制使用（`//` 与 `/* */` 注释会被忽略）：
+
+```jsonc
+{
+  "api_key": "",                  // 必填，或用 CA2A_API_KEY
+  "listen": ":7866",
+  "auth_dir": "./auths",
+  "state_file": "./data/state.json",
+  "default_model": "snap-chat",
+  "cooldown": { "soft_rate": "60s", "err_threshold": 3, "err_cooldown": "10m" },
+  "benefit_auto_claim": true,
+  "update_repo": "hj01857655/codearts2api",   // 留空则关闭在线更新
+  "max_concurrent": 5,
+  "keepalive_window": "10m",
+  "watch": { "enabled": true, "poll_minutes": 30, "refresh_skew_minutes": 30,
+             "keepalive_interval_minutes": 15 },
+  "upstream": { "timeout_seconds": 120 }
+}
+```
+
+## API
+
+除 `GET /healthz` 与面板页面外，所有端点都要求 `Authorization: Bearer <api_key>`。
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| `POST` | `/v1/chat/completions` | OpenAI 兼容对话（`stream` 可选） |
+| `GET` | `/v1/models` | 可用模型列表（含限时福利标记） |
+| `GET` | `/v1/models/{id}` | 单个模型详情 |
+| `GET` | `/healthz` | 健康检查（无可用账号时 503） |
+| `GET` | `/status` | 账号池与版本状态 |
+| `GET` | `/` `/admin` `/panel` | 管理控制台页面 |
+| `GET` | `/admin/api/overview` | 控制台总览 |
+| `POST` | `/admin/api/credits` | 刷新额度读数 |
+| `POST` | `/admin/api/checkin` | 限时福利签到 |
+| `GET` | `/admin/api/benefit/status` | 福利额度状态 |
+| `POST` | `/admin/api/keepalive` | 手动保活 |
+| `POST` | `/admin/api/reload` | 重载 `auths/` 目录 |
+| `POST` | `/admin/api/accounts/enable` `/disable` `/clear-cooldown` | 账号启用 / 禁用 / 清冷却 |
+| `POST` | `/admin/api/oauth/start` `/poll` `/import-callback` | 控制台授权登录 |
+| `GET` | `/oauth/callback` | OAuth 回调 |
+| `GET` | `/admin/api/update/check` | 检测新版本 |
+| `POST` | `/admin/api/update/apply` `/rollback` `/restart` | 升级 / 回滚 / 重启 |
+
+## Web 控制台
 
 左侧导航分五个视图，顶栏右侧是动作区（刷新、设置菜单）：
 
@@ -74,7 +218,7 @@ curl -X POST http://127.0.0.1:7866/v1/chat/completions \
 - **冷却**：只按时间自动恢复，面板没有手动清除按钮；有账号冷却时面板会定期补一次读数，到期自动回到可用态。
 - **在线更新**：设置菜单里有「版本」分组（当前版本 + 检测更新 / 立即更新 / 回滚 / 重启）。详见 [在线更新](#在线更新) 与 [docs/online-update.md](docs/online-update.md)
 
-### 在线更新
+## 在线更新
 
 部署后的实例可在控制台设置菜单（顶栏齿轮）里点「检测更新」，从 GitHub Releases 拉新版：
 下载当前平台归档 → 校验 SHA256 → 原子替换二进制 → 你确认后重启生效。
@@ -93,37 +237,9 @@ curl -X POST http://127.0.0.1:7866/v1/chat/completions \
 - 发版：打 `v*` tag 触发 `.github/workflows/release.yml`（goreleaser），产出
   `codearts2api_<os>_<arch>.tar.gz` 与 `checksums.txt`。
 
-`codearts2api -version` 可随时确认当前二进制版本；`GET /status` 也带 `version` 字段。
-
 详细设计与取舍见 [docs/online-update.md](docs/online-update.md)。
 
-### 跨域与单模型查询
-
-所有响应都带 `Access-Control-Allow-Origin: *`，`OPTIONS` 预检直接返回 `204`，
-浏览器端前端可直连（密钥经 `Authorization: Bearer` 传入）。除 `/v1/models` 列表外，
-还提供 `GET /v1/models/{id}` 返回单个模型详情——部分客户端会逐个查模型。
-
-### 磁盘缓存
-
-模型目录与多轮会话映射会在成功获取后落盘（`state_file + ".models.json"` /
-`state_file + ".chats.json"`，即 `data/state.json.models.json` 与 `data/state.json.chats.json`），
-启动时优先加载，避免重启后首请求重新发现模型、丢失会话续接。
-
-### token 用量（usage）
-
-非流式响应始终带 `usage`：**优先透传上游原生值**（含 `completion_tokens_details`
-等扩展字段原样保留），上游未提供时才按文本长度估算——估算值不是精确 token 计数。
-
-流式默认不返回 usage。需要用量时显式开启：
-
-```jsonc
-"stream_options": { "include_usage": true }
-```
-
-开启后在 `[DONE]` 前会多一个 `choices: []`、`usage` 带值的终帧（OpenAI 同约定），
-其余增量 chunk 的 `usage` 均为 `null`；上游整段没给 usage 时该终帧用估算值兜底。
-`stream_options` 未传、传 `null`、或 `include_usage: false` 均不返回 usage。
-上游报错时只发 `event: error`，不发 usage。
+## 使用说明
 
 ### 模型列表与限时福利
 
@@ -160,17 +276,33 @@ go run ./cmd/models -claim          # 先领取限时福利再查询（幂等，
 真实请求失败也会被学习（`not registered` / `benefit not found` 记为账号能力问题，
 不会给健康账号记错误冷却）。探测结果缓存 30 分钟。
 
-### API Key 必填
+### 跨域与单模型查询
 
-服务没有 API Key 会**拒绝启动**（旧版本会回退到公开的 `dummy-key-for-codearts`，
-等于把接口暴露给任何人）。三选一：
+所有响应都带 `Access-Control-Allow-Origin: *`，`OPTIONS` 预检直接返回 `204`，
+浏览器端前端可直连（密钥经 `Authorization: Bearer` 传入）。除 `/v1/models` 列表外，
+还提供 `GET /v1/models/{id}` 返回单个模型详情——部分客户端会逐个查模型。
 
-```bash
-# 1) env（推荐，配合 .env / systemd EnvironmentFile）
-export CA2A_API_KEY=$(openssl rand -hex 24)
-# 2) config.json 的 "api_key" 字段
-# 3) docker compose 的 .env
+### 磁盘缓存
+
+模型目录与多轮会话映射会在成功获取后落盘（`state_file + ".models.json"` /
+`state_file + ".chats.json"`，即 `data/state.json.models.json` 与 `data/state.json.chats.json`），
+启动时优先加载，避免重启后首请求重新发现模型、丢失会话续接。
+
+### token 用量（usage）
+
+非流式响应始终带 `usage`：**优先透传上游原生值**（含 `completion_tokens_details`
+等扩展字段原样保留），上游未提供时才按文本长度估算——估算值不是精确 token 计数。
+
+流式默认不返回 usage。需要用量时显式开启：
+
+```jsonc
+"stream_options": { "include_usage": true }
 ```
+
+开启后在 `[DONE]` 前会多一个 `choices: []`、`usage` 带值的终帧（OpenAI 同约定），
+其余增量 chunk 的 `usage` 均为 `null`；上游整段没给 usage 时该终帧用估算值兜底。
+`stream_options` 未传、传 `null`、或 `include_usage: false` 均不返回 usage。
+上游报错时只发 `event: error`，不发 usage。
 
 ### 账号续期
 
@@ -225,31 +357,7 @@ docker compose up -d --build
 容器内不支持在线更新（会被下次 `up --build` 覆盖），升级改用
 `docker compose pull && docker compose up -d`。
 
-## 环境变量配置
-
-除了 `config.json`，还支持以下环境变量覆盖：
-
-| 变量名 | 说明 | 默认值 |
-|--------|------|--------|
-| `CA2A_API_KEY` | API 访问密钥 | - |
-| `CA2A_LISTEN` | 监听地址 | `:7866` |
-| `CA2A_AUTH_DIR` | 凭证目录 | `./auths` |
-| `CA2A_STATE_FILE` | 状态文件 | `./data/state.json` |
-| `CA2A_DEFAULT_MODEL` | 默认模型 | `glm-5.2` |
-| `CA2A_OAUTH_CALLBACK_HOST` | OAuth 回调主机 | - |
-| `CA2A_WATCH_ENABLED` | 调度器开关 | `true` |
-| `CA2A_WATCH_POLL_MINUTES` | 轮询间隔（分钟） | `30` |
-| `CA2A_WATCH_REFRESH_SKEW` | 提前刷新时间（分钟） | `30` |
-| `CA2A_WATCH_KEEPALIVE_INTERVAL` | 保活间隔（分钟） | `15` |
-| `CA2A_MAX_CONCURRENT` | 单账号最大并发 | `5` |
-| `CA2A_KEEPALIVE_WINDOW` | 保活窗口 | `10m` |
-| `CA2A_QUEUE_RETRY_SECONDS` | 上游并发/TPM 排队时的重试间隔（秒） | `10` |
-| `CA2A_QUEUE_MAX_ATTEMPTS` | 排队重试次数上限（约 5 分钟） | `30` |
-| `CA2A_BENEFIT_AUTO_CLAIM` | 发现模型时自动领取限时福利（幂等；关闭则福利模型不可用） | `true` |
-| `CA2A_LOGIN_CLIENT_ID` | 控制台授权登录使用的 OAuth client_id | 已有账号的取值，否则 `codearts-agent` |
-| `CA2A_UPDATE_REPO` | 在线更新使用的 GitHub 仓库（owner/name） | 见 `config.json` 的 `update_repo` |
-
-## 目录结构
+## 项目结构
 
 ```
 cmd/server/        HTTP 服务（config + main）
@@ -272,11 +380,35 @@ deploy/            systemd unit 样例
 docs/              逆向记录与接口清单；在线更新设计说明（online-update.md）
 ```
 
+## 相关文档
+
+- [docs/online-update.md](docs/online-update.md) — 在线更新的设计、约束与实施记录
+- [docs/reverse-engineering.md](docs/reverse-engineering.md) — CodeArts Agent 逆向记录与接口清单
+
+## 致谢
+
+本项目是 [HITZY2002/codearts2api](https://github.com/HITZY2002/codearts2api) 的个人维护分支
+（[hj01857655/codearts2api](https://github.com/hj01857655/codearts2api)）。架构与运维形态参考了
+[Sliverkiss](https://github.com/Sliverkiss) 的同系列开源项目：
+
+- [workbuddy2api](https://github.com/Sliverkiss/workbuddy2api) — WorkBuddy CN OpenAI 兼容反代（账号池 / 轮转 / 签到架构）
+- [traework2api](https://github.com/Sliverkiss/traework2api) — TRAE Work OpenAI 兼容反代（零依赖 Go 骨架）
+- [qoderwork2api](https://github.com/Sliverkiss/qoderwork2api) — QoderWork CN OpenAI 兼容反代（OAuth 授权流程）
+
+感谢原作者的开源与优秀设计。
+
 ## 免责声明
 
-仅供学习和研究使用。使用者需遵守华为云服务条款，自行承担使用风险。
+本项目（包括代码、脚本、文档与配置示例）**仅供个人学习与研究使用**，为非官方网关，
+与华为云无任何隶属关系。
+
+- 仅限使用**本人持有且已获授权的账号**，仅限本机 / 私有环境测试；不得共享、转售或违规分发。
+- 使用本项目涉及目标平台服务条款与账号风险，账号封禁、条款违约或使用结果由使用者自行承担。
+- `auths/` 内为明文凭证，请妥善保管；对外暴露端口前务必设置 `api_key` 并置于可信网络。
+- 本项目按「现状」提供，不附带任何明示或默示的担保；使用所产生的风险与后果由使用者承担。
+- 文中引用的第三方产品、服务与商标，其权利归各自权利人所有。
 
 ## License
 
-MIT
+[MIT](LICENSE) © 2026 HITZY2002
 
