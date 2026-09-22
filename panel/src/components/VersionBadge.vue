@@ -133,14 +133,13 @@ onBeforeUnmount(() => { document.removeEventListener("click", docClick); if (tim
 
     <div v-if="open" class="vdrop">
       <div class="vh">
-        <span>当前版本</span>
+        <span>软件更新</span>
         <button :disabled="store.updateChecking" title="刷新" @click="check">
           <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.6" :class="{ spin: store.updateChecking }" style="animation:none" stroke-linecap="round" stroke-linejoin="round"><path d="M13.5 8a5.5 5.5 0 1 1-1.6-3.9"/><path d="M13.5 2.5v3h-3"/></svg>
         </button>
       </div>
 
-      <div class="vc">v{{ store.version || "-" }}<span v-if="!hasUpdate && store.updateChecked && !store.updateFailed" class="vok">✓</span></div>
-      <div class="vsub">{{ hasUpdate ? "最新版本：v" + store.latestVersion : (store.updateChecked ? "已是最新" : "点击右上角刷新图标检测更新") }}</div>
+      <div class="vsub">{{ hasUpdate ? "发现新版本 v" + store.latestVersion : (store.updateChecked ? "已是最新" : "点击刷新图标检测更新") }}</div>
 
       <template v-if="store.updateFailed">
         <div class="card err">
