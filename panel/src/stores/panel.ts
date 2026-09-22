@@ -106,6 +106,14 @@ export const usePanelStore = defineStore("panel", {
         this.logLine("err", "福利额度查询 · " + e.message);
       }
     },
+    // 清空操作记录：状态变更集中在 store，组件不再直接赋值。
+    clearLog() {
+      this.log = [];
+    },
+    // 用本轮领取结果刷新福利表（比再拉一次 benefit/status 少一次上游往返）。
+    applyBenefitResults(results: BenefitResult[]) {
+      this.benefit = { results };
+    },
     async runAction(path: string, body: unknown, label: string): Promise<ActionResponse | null> {
       try {
         const data = await api<ActionResponse>(path, { method: "POST", body: JSON.stringify(body || {}) });
