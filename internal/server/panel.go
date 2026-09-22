@@ -7,14 +7,14 @@ import (
 )
 
 // 面板有两层来源：
-//   panel-dist/ —— panel/ 下 Vue3+Vite 工程的构建产物（bun run build），
+//   dist/ —— panel/ 下 Vue3+Vite 工程的构建产物（bun run build），
 //                  vite-plugin-singlefile 把 JS/CSS 全部内联进一个 index.html，
 //                  因此嵌入整个目录即可，无需静态资源路由。
-//   panel.html —— 旧版单文件面板，仅在 panel-dist 缺失（未执行前端构建）时
+//   panel.html —— 旧版单文件面板，仅在 dist 缺失（未执行前端构建）时
 //                  兜底，保证 clone 后直接 go build 不依赖 Node。
 // 两者的 __SERVICE_*__ / __LOGO__ / __ACCENT__ 占位符在 servePanel 里统一注入。
 var (
-	//go:embed panel-dist
+	//go:embed dist
 	panelDist embed.FS
 
 	//go:embed panel.html
@@ -22,7 +22,7 @@ var (
 )
 
 func panelHTML() []byte {
-	if b, err := panelDist.ReadFile("panel-dist/index.html"); err == nil && len(b) > 0 {
+	if b, err := panelDist.ReadFile("dist/index.html"); err == nil && len(b) > 0 {
 		return b
 	}
 	return []byte(panelHTMLRaw)

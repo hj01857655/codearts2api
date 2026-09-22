@@ -1,7 +1,9 @@
 auths/
 data/
 bin/
-dist/
+# 锚定到仓库根：面板产物 internal/server/dist/ 必须入库（发布不重建，
+# 见 .github/workflows/release.yml），未锚定的 dist/ 会在任意深度命中。
+/dist/
 config.json
 .env
 *.key

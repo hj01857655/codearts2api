@@ -13,7 +13,7 @@ LDFLAGS := -X main.version=$(VERSION) -X main.commit=$(COMMIT) -X main.buildDate
 
 all: linux
 
-# 面板前端：Vue3+Vite 工程，构建产物内联为单文件嵌入 internal/server/panel-dist。
+# 面板前端：Vue3+Vite 工程，构建产物内联为单文件嵌入 internal/server/dist。
 # package-lock.json 不提交（bun 管理），CI/本地统一用 bun。
 panel:
 	cd panel && bun install --frozen-lockfile && bun run build

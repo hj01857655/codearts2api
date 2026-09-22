@@ -385,7 +385,7 @@ internal/scheduler/ token 续期看门狗（含保活机制）
 internal/update/    在线更新（检测/校验/原子替换/回滚，仅标准库）
 internal/server/   OpenAI 兼容路由 + 管理控制台
                    panel/（Vue3+Vite 面板源码，bun run build 产出单文件
-                   panel-dist/index.html 由 panel.go 嵌入；panel.html 为
+                   internal/server/dist/index.html 由 panel.go 嵌入；panel.html 为
                    免 Node 构建的旧版兜底）、admin.go（面板 API）、
                    admin_update.go（在线更新端点）、oauth.go（授权登录）
 deploy/            systemd unit 样例
