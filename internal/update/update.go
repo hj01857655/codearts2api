@@ -378,17 +378,51 @@ func (s *Service) applyRelease(ctx context.Context, rel *Release) error {
 	if err := os.Chmod(newExe, 0o755); err != nil {
 		return fmt.Errorf("chmod new binary: %w", err)
 	}
+	// 先把新二进制刷到盘上再换名：rename 只保证目录项原子可见，不保证文件内容
+	// 已落盘。换名后紧跟断电/被 kill -9 时会留下指向空文件的目录项——上一版还在
+	// 备份里，但重启拉起的进程起不来，对用户就是彻底不可用。
+	if err := syncFile(newExe); err != nil {
+		return fmt.Errorf("flush new binary: %w", err)
+	}
 
 	return replaceExecutable(exe, newExe)
 }
 
+// syncFile 把文件内容刷盘（fsync）。
+//
+// 用 O_RDWR 而非只读句柄：Windows 的 FlushFileBuffers 要求句柄带写权限，
+// 只读句柄会被拒（Access is denied），而本函数就发生在自己的临时文件上。
+func syncFile(path string) error {
+	f, err := os.OpenFile(path, os.O_RDWR, 0)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	return f.Sync()
+}
+
+// syncDir 刷目录项，让 rename 的结果真正落到盘上。
+// 目录 fsync 在部分平台（Windows）不被支持，失败不致命，忽略即可。
+func syncDir(dir string) {
+	f, err := os.Open(dir)
+	if err != nil {
+		return
+	}
+	defer f.Close()
+	_ = f.Sync()
+}
+
 // replaceExecutable 原子替换：旧版先改名成备份，再让新版就位；第二步失败则回滚。
+//
+// 不先删旧备份：rename 在 POSIX 上是原子覆盖目标，旧备份被覆盖的同一瞬间新备份
+// 就已经就位，中间不存在「没有备份」的窗口（原实现在这里留了一个）。备份是回滚
+// 与失败恢复的唯一凭据，不能提前删。
 func replaceExecutable(exe, newExe string) error {
 	backup := backupPath(exe)
-	_ = os.Remove(backup)
 	if err := os.Rename(exe, backup); err != nil {
 		return fmt.Errorf("backup current binary: %w", err)
 	}
+	syncDir(filepath.Dir(exe))
 	if err := os.Rename(newExe, exe); err != nil {
 		if rerr := os.Rename(backup, exe); rerr != nil {
 			// 已无路可退：明确告知用户手工恢复的命令。
@@ -396,6 +430,7 @@ func replaceExecutable(exe, newExe string) error {
 		}
 		return fmt.Errorf("install new binary: %w", err)
 	}
+	syncDir(filepath.Dir(exe))
 	return nil
 }
 
