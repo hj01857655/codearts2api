@@ -17,7 +17,7 @@ const VIEWS: { id: string; label: string; sub: string }[] = [
   { id: "accounts", label: "账号池", sub: "账号健康 · Token · 在途" },
   { id: "benefit", label: "福利额度", sub: "限时福利签到与余额" },
   { id: "models", label: "模型", sub: "上游可用模型与接入地址" },
-  { id: "schedule", label: "调度", sub: "后台巡检与保活参数" },
+  { id: "schedule", label: "配置", sub: "巡检保活与服务参数" },
   { id: "log", label: "操作记录", sub: "本页动作流水" },
 ];
 const valid = VIEWS.map((v) => v.id);

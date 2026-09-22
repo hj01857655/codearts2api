@@ -42,6 +42,8 @@ func main() {
 	if err != nil {
 		log.Fatalf("load config: %v", err)
 	}
+	// 应用面板配置页保存的覆盖层（data/settings.json，与 state 文件同目录）。
+	cfg.ApplyOverlay(filepath.Join(filepath.Dir(cfg.StateFile), "settings.json"))
 
 	auths, err := auth.LoadDir(cfg.AuthDir)
 	if err != nil {

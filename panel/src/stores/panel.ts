@@ -55,6 +55,12 @@ export const usePanelStore = defineStore("panel", {
       this.log.push({ t: new Date(), ch, text });
       if (this.log.length > 500) this.log.shift();
     },
+    async fetchConfig() {
+      return api("/admin/api/config");
+    },
+    async saveConfig(body: any) {
+      return api("/admin/api/config", { method: "PUT", body: JSON.stringify(body) });
+    },
     async login(key: string) {
       if (!key.trim()) { this.loginErr = "请输入 API Key"; return; }
       setKey(key.trim());

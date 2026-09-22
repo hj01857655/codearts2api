@@ -286,6 +286,56 @@ func (c *Config) normalize() error {
 	return nil
 }
 
+// ApplyOverlay 把 data/settings.json 覆盖层合并到配置上（config.json 之上）。
+//
+// 面板「配置」页保存的白名单字段落在这里，避免回写用户手工维护的 config.json
+// （那份文件可能带 // 注释，JSON 解析后无法原样写回）。文件不存在不算错误。
+func (c *Config) ApplyOverlay(path string) {
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return
+	}
+	var o struct {
+		Watch struct {
+			Enabled           *bool `json:"enabled,omitempty"`
+			PollMinutes       *int  `json:"poll_minutes,omitempty"`
+			RefreshSkewM      *int  `json:"refresh_skew_minutes,omitempty"`
+			KeepaliveInterval *int  `json:"keepalive_interval_minutes,omitempty"`
+		} `json:"watch,omitempty"`
+		KeepaliveWindow  *string `json:"keepalive_window,omitempty"`
+		MaxConcurrent     *int    `json:"max_concurrent,omitempty"`
+		BenefitAutoClaim *bool   `json:"benefit_auto_claim,omitempty"`
+		UpdateProxy      *string `json:"update_proxy,omitempty"`
+	}
+	if err := json.Unmarshal(raw, &o); err != nil {
+		return
+	}
+	if o.Watch.Enabled != nil {
+		c.Watch.Enabled = *o.Watch.Enabled
+	}
+	if o.Watch.PollMinutes != nil {
+		c.Watch.PollMinutes = *o.Watch.PollMinutes
+	}
+	if o.Watch.RefreshSkewM != nil {
+		c.Watch.RefreshSkewM = *o.Watch.RefreshSkewM
+	}
+	if o.Watch.KeepaliveInterval != nil {
+		c.Watch.KeepaliveInterval = *o.Watch.KeepaliveInterval
+	}
+	if o.KeepaliveWindow != nil {
+		c.KeepaliveWindow = *o.KeepaliveWindow
+	}
+	if o.MaxConcurrent != nil {
+		c.MaxConcurrent = *o.MaxConcurrent
+	}
+	if o.BenefitAutoClaim != nil {
+		c.BenefitAutoClaim = *o.BenefitAutoClaim
+	}
+	if o.UpdateProxy != nil {
+		c.UpdateProxy = *o.UpdateProxy
+	}
+}
+
 // ToPoolConfig 转换为 pool.Config。
 func (c *Config) ToPoolConfig() pool.Config {
 	kw := c.KeepaliveWindow

@@ -152,6 +152,8 @@ type Handler struct {
 	cfg   Config
 	mux   *http.ServeMux
 	oauth *oauthStore
+	// settings 配置页运行时状态（覆盖层 + data/settings.json 持久化路径）。
+	settings *settingsStore
 
 	convMu sync.Mutex
 	chats  map[string]string // account → 最近 chat_id
@@ -212,10 +214,12 @@ func NewHandler(cfg Config) *Handler {
 		cfg.LoginConfig = upstream.DefaultLoginConfig()
 	}
 	h := &Handler{
-		cfg: cfg, mux: http.NewServeMux(), oauth: newOAuthStore(),
-		chats: map[string]string{}, logins: map[string]*pendingLogin{},
+		cfg:      cfg, mux: http.NewServeMux(), oauth: newOAuthStore(),
+		settings: newSettingsStore(settingsPathFor(cfg)),
+		chats:    map[string]string{}, logins: map[string]*pendingLogin{},
 		convAcct: map[string]string{},
 	}
+	h.registerConfigRoutes()
 	h.loadChats()
 	h.loadModelCache()
 	// 在线更新：配置了 update_repo 才构造；未配置时面板会在检测时得到明确提示。
