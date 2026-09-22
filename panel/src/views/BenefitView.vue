@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
 import { usePanelStore } from "../stores/panel";
+import ConfirmDialog from "../components/ConfirmDialog.vue";
 
 const store = usePanelStore();
 const checking = ref(false);
 const claiming = ref(false);
+const confirmingClaim = ref(false);
 
 function nameOf(uid: string): string {
   const a = store.accounts.find((x) => (x.uid || x.name) === uid);
@@ -53,10 +55,11 @@ async function refresh() {
   try { await store.loadBenefit(false); } finally { checking.value = false; }
 }
 async function claimAll() {
+  confirmingClaim.value = false;
   claiming.value = true;
   try {
     const d = await store.runAction("/admin/api/checkin", {}, "全部领取福利");
-    if (d && d.results) store.benefit = { results: d.results };
+    if (d && d.results) store.applyBenefitResults(d.results);
   } finally { claiming.value = false; }
 }
 </script>
@@ -69,7 +72,7 @@ async function claimAll() {
         <span class="grow" />
         <span class="note">{{ note }}</span>
         <button class="xs" :disabled="checking" @click="refresh">{{ checking ? "查询中…" : "刷新额度" }}</button>
-        <button class="xs primary" :disabled="claiming" @click="claimAll">全部领取</button>
+        <button class="xs primary" :disabled="claiming" @click="confirmingClaim = true">{{ claiming ? "领取中…" : "全部领取" }}</button>
       </header>
       <div class="tbl-wrap">
         <table class="acc">
@@ -123,5 +126,15 @@ async function claimAll() {
         </table>
       </div>
     </div>
+
+    <ConfirmDialog
+      v-if="confirmingClaim"
+      :busy="claiming"
+      title="全部领取福利"
+      message="将对账号池内全部账号发起上游领取。领取是幂等操作（已领过的不会重复领取），但会逐个访问上游。"
+      confirm-label="全部领取"
+      @confirm="claimAll"
+      @cancel="confirmingClaim = false"
+    />
   </section>
 </template>

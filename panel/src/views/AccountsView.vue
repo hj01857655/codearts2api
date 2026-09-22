@@ -2,8 +2,35 @@
 import { computed, onMounted, onBeforeUnmount, ref } from "vue";
 import { usePanelStore } from "../stores/panel";
 import { BASE, type Account } from "../api";
+import ConfirmDialog from "../components/ConfirmDialog.vue";
 
 const store = usePanelStore();
+
+// 待确认的危险操作。仅「禁用」与「重载 auths」入列：前者要手动启用才能恢复，
+// 后者会重建整池账号对象；「刷新」「保活」可重复且无副作用，不套确认，
+// 否则确认框会被点成条件反射而失效。
+const pending = ref<{ run: () => void; title: string; message: string; label: string } | null>(null);
+function askDisable(a: Account) {
+  pending.value = {
+    title: "禁用账号",
+    message: "「" + nameOf(a) + "」将被移出可用池，需手动启用才能恢复。",
+    label: "禁用",
+    run: () => act("/admin/api/accounts/disable", { uid: uidOf(a), reason: "manual disable from panel" }, a, "禁用"),
+  };
+}
+function askReload() {
+  pending.value = {
+    title: "重载 auths",
+    message: "将按 auths/ 目录重新载入全部账号并重建账号池，进行中的请求不受影响。",
+    label: "重载",
+    run: () => store.runAction("/admin/api/reload", {}, "重载 auths"),
+  };
+}
+function confirmPending() {
+  const p = pending.value;
+  pending.value = null;
+  p?.run();
+}
 
 const stats = computed(() => {
   let inflight = 0, errs = 0;
@@ -82,7 +109,7 @@ async function act(path: string, body: unknown, a: Account, verb: string) {
         <span class="note">{{ note }}</span>
         <button class="xs" @click="store.runAction('/admin/api/credits', {}, '全员刷新状态')">全员刷新状态</button>
         <button class="xs" @click="store.runAction('/admin/api/keepalive', {}, '全员保活')">全员保活</button>
-        <button class="xs" @click="store.runAction('/admin/api/reload', {}, '重载 auths')">重载 auths</button>
+        <button class="xs" @click="askReload">重载 auths</button>
         <button class="xs primary" @click="$emit('add')">＋ 授权登录</button>
       </header>
       <div class="tbl-wrap">
@@ -123,7 +150,7 @@ async function act(path: string, body: unknown, a: Account, verb: string) {
                   <button @click="act('/admin/api/credits', { uid: uidOf(a) }, a, '刷新状态')">刷新</button>
                   <button @click="act('/admin/api/keepalive', { uid: uidOf(a) }, a, '保活')">保活</button>
                   <button v-if="a.disabled" @click="act('/admin/api/accounts/enable', { uid: uidOf(a) }, a, '启用')">启用</button>
-                  <button v-else class="danger" @click="act('/admin/api/accounts/disable', { uid: uidOf(a), reason: 'manual disable from panel' }, a, '禁用')">禁用</button>
+                  <button v-else class="danger" @click="askDisable(a)">禁用</button>
                 </div>
               </td>
             </tr>
@@ -131,5 +158,15 @@ async function act(path: string, body: unknown, a: Account, verb: string) {
         </table>
       </div>
     </div>
+
+    <ConfirmDialog
+      v-if="pending"
+      :title="pending.title"
+      :message="pending.message"
+      :confirm-label="pending.label"
+      danger
+      @confirm="confirmPending"
+      @cancel="pending = null"
+    />
   </section>
 </template>

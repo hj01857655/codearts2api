@@ -96,6 +96,9 @@ button.primary:hover:not(:disabled){filter:brightness(1.08)}
 button.ghost{background:transparent}
 button.danger{color:var(--bad)}
 button.danger:hover:not(:disabled){border-color:var(--bad)}
+/* 不可逆操作的确认按钮：实心红，与「危险但可恢复」的描边 danger 区分。 */
+button.danger-solid{background:var(--bad);border-color:var(--bad);color:#fff;font-weight:550}
+button.danger-solid:hover:not(:disabled){filter:brightness(1.08)}
 button.xs{padding:3.5px 9px;font-size:12.5px;border-radius:6px}
 button.icon{padding:7px 9px}
 input,select{font:inherit;color:var(--ink);background:var(--surface-2);border:1px solid var(--line);border-radius:7px;padding:7px 11px;width:100%}
