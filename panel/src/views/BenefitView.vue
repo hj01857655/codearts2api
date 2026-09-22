@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from "vue";
+import { computed, onMounted, onBeforeUnmount, ref } from "vue";
 import { usePanelStore } from "../stores/panel";
 import ConfirmDialog from "../components/ConfirmDialog.vue";
 
@@ -7,6 +7,17 @@ const store = usePanelStore();
 const checking = ref(false);
 const claiming = ref(false);
 const confirmingClaim = ref(false);
+
+// 「今天」是会翻篇的：跨过零点后同一份 create_time 就从「今日已签」变成
+// 「今日未签」。若只读 new Date()，它不进响应式依赖，computed 不会重算，
+// 按钮会一直灰着直到手动刷新。用一个按间隔推进的 now 作为依赖。
+//
+// 用轮询而不是「定时到下一个零点再触发」：休眠/挂起会让长定时器漂移或
+// 不触发，轮询在唤醒后自然对齐。30s 的粒度对签到按钮足够。
+const now = ref(Date.now());
+let clock: ReturnType<typeof setInterval> | null = null;
+onMounted(() => { clock = setInterval(() => { now.value = Date.now(); }, 30_000); });
+onBeforeUnmount(() => { if (clock) clearInterval(clock); });
 
 function nameOf(uid: string): string {
   const a = store.accounts.find((x) => (x.uid || x.name) === uid);
@@ -23,14 +34,15 @@ function pctColor(pct: number, has: boolean): string {
 }
 // 今天是否已签到。额度按天发放，「上次签到」只有落在今天才算已签。
 // 与后端 upstream.ClaimedToday 同一判据：按本地自然日比较，不只看非 0。
+// 读 now.value 而非 new Date()，这样跨零点时 computed 会自动重算。
 function signedToday(t?: number | string): boolean {
   if (!t) return false;
   const d = new Date(typeof t === "number" ? t : new Date(t).getTime());
   if (isNaN(d.getTime())) return false;
-  const now = new Date();
-  return d.getFullYear() === now.getFullYear()
-    && d.getMonth() === now.getMonth()
-    && d.getDate() === now.getDate();
+  const n = new Date(now.value);
+  return d.getFullYear() === n.getFullYear()
+    && d.getMonth() === n.getMonth()
+    && d.getDate() === n.getDate();
 }
 
 const rows = computed(() => {
