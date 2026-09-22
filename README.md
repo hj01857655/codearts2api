@@ -356,7 +356,10 @@ cp config.example.jsonc config.json
 docker compose up -d --build
 ```
 
-容器内不支持在线更新（会被下次 `up --build` 覆盖），升级改用拉源码后重建：
+容器内同样支持在线更新：控制台「检测更新 → 立即更新 → 重启」即可原地升级
+（更新替换的是容器可写层里的二进制，重启由 `restart: unless-stopped` 拉起）。
+注意：下次 `docker compose up --build` 重建镜像会盖掉更新的版本；想固定升级到
+某个 Release，仍可拉源码后重建：
 
 ```bash
 cd /opt/codearts2api
@@ -381,7 +384,9 @@ internal/pool/     账号池（token 校验/自动刷新/冷却/并发控制）
 internal/scheduler/ token 续期看门狗（含保活机制）
 internal/update/    在线更新（检测/校验/原子替换/回滚，仅标准库）
 internal/server/   OpenAI 兼容路由 + 管理控制台
-                   panel.html / panel.go（内嵌面板）、admin.go（面板 API）、
+                   panel/（Vue3+Vite 面板源码，bun run build 产出单文件
+                   panel-dist/index.html 由 panel.go 嵌入；panel.html 为
+                   免 Node 构建的旧版兜底）、admin.go（面板 API）、
                    admin_update.go（在线更新端点）、oauth.go（授权登录）
 deploy/            systemd unit 样例
 docs/              逆向记录与接口清单；在线更新设计说明（online-update.md）

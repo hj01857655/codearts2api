@@ -1,10 +1,13 @@
-// Package update 实现「检测新版本 → 下载校验 → 原子替换二进制 → 交由 systemd 重启」
+// Package update 实现「检测新版本 → 下载校验 → 原子替换二进制 → 优雅退出重启」
 // 的自更新链路，只用标准库：本服务进程持有华为云凭证，外部依赖越少越可控。
 //
 // 设计说明见 docs/online-update.md。三个不可动摇的约束：
 //  1. 替换必须是原子的（同目录 rename），绝不能原地写正在运行的文件。
 //  2. 校验和不匹配一律中止，且不动现有二进制——绝不做「没校验就放过」的降级。
-//  3. 重启不调 systemctl（需要 sudo），而是退出进程，交给 unit 的 Restart=always。
+//  3. 重启不调 systemctl（需要 sudo），而是退出进程，交给守护方拉起：
+//     systemd 的 Restart=always 或 Docker 的 restart: unless-stopped。
+//     容器内自更新也因此成立：替换的是容器可写层里的文件，容器重启不清空
+//     可写层，新二进制在重启后依然有效（做法对齐 sub2api）。
 package update
 
 import (
@@ -40,7 +43,7 @@ var ErrNoUpdate = errors.New("already up to date")
 // ErrNoBackup 没有可回滚的备份。
 var ErrNoBackup = errors.New("no backup binary found")
 
-// ErrUnsupported 当前部署形态不支持自更新（如容器内）。
+// ErrUnsupported 当前部署形态不支持自更新（如 Windows 的文件锁）。
 var ErrUnsupported = errors.New("self-update is not supported in this environment")
 
 // Release 一次发布。
@@ -130,23 +133,12 @@ func New(repo, version string, opts ...Option) *Service {
 
 // defaultSupported 判断当前环境是否支持自更新。
 //
-// 容器内替换二进制会在下次 up --build 时被镜像内容覆盖，属白做，故明确拒绝并让
-// 调用方提示改用镜像；非 Linux 平台无法自替换正在运行的二进制，同样拒绝。
+// Linux 一律支持，容器内也不例外（对齐 sub2api）：替换的是容器可写层里的
+// 二进制，退出后由 restart 策略拉起，新文件仍在；唯一注意点是下次
+// `docker compose up --build` 重建镜像会盖掉它，文档已说明。非 Linux 平台
+// 无法自替换正在运行的二进制（Windows 文件锁），拒绝。
 func defaultSupported() bool {
-	if runtime.GOOS != "linux" {
-		return false
-	}
-	// Docker 会在容器根目录放 /.dockerenv；部分运行时（podman/k8s）靠 cgroup 判断。
-	if _, err := os.Stat("/.dockerenv"); err == nil {
-		return false
-	}
-	if b, err := os.ReadFile("/proc/1/cgroup"); err == nil {
-		s := string(b)
-		if strings.Contains(s, "docker") || strings.Contains(s, "kubepods") || strings.Contains(s, "containerd") {
-			return false
-		}
-	}
-	return true
+	return runtime.GOOS == "linux"
 }
 
 // Detected 报告该环境是否支持自更新，附带原因。
@@ -154,14 +146,7 @@ func (s *Service) Detected() (bool, string) {
 	if s.supportedFn() {
 		return true, ""
 	}
-	if runtime.GOOS != "linux" {
-		return false, "仅 Linux + systemd 支持在线更新（当前 " + runtime.GOOS + "）"
-	}
-	// 不能建议 docker compose pull：本项目没有镜像仓库发布链路（docker-compose.yml
-	// 只有 build: 段、没有 image:，goreleaser 也不推镜像），pull 只会报找不到镜像。
-	// 真实升级路径是拉源码后重建镜像。
-	return false, "容器内更新会被下次重建覆盖，请改用镜像升级：在部署目录执行 " +
-		"git fetch --tags && git checkout <新版本 tag> && docker compose up -d --build"
+	return false, "仅 Linux 支持在线更新（systemd 与容器部署均可，当前 " + runtime.GOOS + "）"
 }
 
 // Current 当前版本。

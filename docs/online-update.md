@@ -11,7 +11,7 @@
 1. 比对 GitHub Releases，判断是否有新版本
 2. 下载当前平台产物，校验 SHA256
 3. 原子替换正在运行的二进制
-4. 优雅退出，由 systemd 拉起新版本
+4. 优雅退出，由守护方拉起新版本（systemd 的 Restart=always 或 Docker 的 restart 策略）
 5. 出问题时回滚到上一版
 
 硬约束：不引入第三方自更新库；不需要 sudo；不破坏现有 systemd 与 Docker 部署。
@@ -29,7 +29,7 @@
 | 面板入口 | 无 | 缺口 |
 | systemd 自动重启 | **已有**：`deploy/codearts2api.service` 的 `Restart=always` / `RestartSec=5` | 无需改动，是「退出即重启」的前提 |
 | 二进制目录可写 | **可以**：`ProtectSystem=full` 只读化 `/usr`、`/boot`、`/etc`，`/opt` 仍可写 | 若日后收紧为 `strict`，须把 `/opt/codearts2api/bin` 加入 `ReadWritePaths`（现仅 `auths`、`data`） |
-| Docker 部署 | `config.json` 只读挂载，`auths`/`data` 为 volume | 容器内自更新会被重建覆盖，见 §7 |
+| Docker 部署 | `config.json` 只读挂载，`auths`/`data` 为 volume | 容器内自更新写入可写层，`restart: unless-stopped` 拉起即生效；下次 `up --build` 重建镜像会盖掉，见 §7 |
 
 注：`internal/upstream/client.go` 的 `plugin-version: 5.2.0` 是**上游华为的插件版本**，
 与服务自身版本无关，不可作为比较基准。
@@ -159,7 +159,7 @@ go func() {
 }()
 ```
 
-前提是 unit 里保持 `Restart=always`（现已满足）。Docker 下不应走这条路（见 §7）。
+前提是 unit 里保持 `Restart=always`（现已满足）。Docker 下同理依赖 `restart: unless-stopped`（见 §7）。
 
 ## 5. 安全
 
@@ -180,16 +180,16 @@ go func() {
 - 新二进制启动失败时，systemd 的 `StartLimitBurst` 会让服务停在 failed 而不无限重启，
   这是好事，但需要文档告诉用户怎么手动回滚。
 
-**Docker（自更新不适用）**
+**Docker（`v0.1.7` 起支持，对齐 sub2api）**
 
-- 容器内替换二进制，下一次 `docker compose up --build` 就被镜像内容覆盖，白做。
-- 升级路径：**拉源码后重建镜像**——`git fetch --tags && git checkout <tag> &&
-  docker compose up -d --build`。
-  注意：本项目**没有**镜像仓库发布链路（`docker-compose.yml` 只有 `build:` 段、
-  没有 `image:`；goreleaser 只发 `tar.gz`，不推镜像），所以 `docker compose pull`
-  会报找不到镜像，不要写成提示。
-- 因此更新端点应能识别「我在容器里」（如存在 `/.dockerenv`）并明确拒绝自更新，
-  提示改用上述重建路径，而不是静默失败。
+- 容器内替换的是可写层里的二进制，退出后由 `restart: unless-stopped` 拉起，
+  新文件仍在，更新有效。
+- 唯一注意点：下一次 `docker compose up --build` 重建镜像会盖掉在线更新
+  得到的版本；想固定升级到某个 Release，仍走拉源码后重建镜像
+  （`git fetch --tags && git checkout <tag> && docker compose up -d --build`）。
+  本项目**没有**镜像仓库发布链路（`docker-compose.yml` 只有 `build:` 段、
+  没有 `image:`），所以 `docker compose pull` 会报找不到镜像，不要写成提示。
+- `defaultSupported()` 因此只看 `runtime.GOOS == "linux"`，不再探测容器环境。
 
 ## 7. 边界与取舍
 
@@ -229,7 +229,7 @@ go func() {
 2. 是否要给更新请求支持代理配置，以及代理凭据的存放方式。
 3. 面板要不要显示 Release 的更新说明全文，还是只显示版本号与链接。
 4. 尚未验证「真机点按钮完成一次真实更新」——首个 Release（`v0.1.0`）已就位，
-   剩下的前提是一个 Linux + systemd 的部署实例（容器内按设计拒绝自更新）。
+   剩下的前提是一个 Linux 部署实例（systemd 或容器均可，`v0.1.7` 起容器内也支持）。
 
 ## 附：本文核对过的来源
 

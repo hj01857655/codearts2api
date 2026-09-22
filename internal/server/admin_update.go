@@ -89,7 +89,7 @@ func (h *Handler) adminUpdateApply(w http.ResponseWriter, r *http.Request) {
 		case errors.Is(aerr, update.ErrNoUpdate):
 			msg, code = "已是最新版本（"+up.Current()+"）", http.StatusOK
 		case errors.Is(aerr, update.ErrUnsupported):
-			msg, code = "当前环境不支持在线更新，请改用镜像或手动替换", http.StatusBadRequest
+			msg, code = "当前环境不支持在线更新（仅 Linux 可用，systemd 与容器部署均可）", http.StatusBadRequest
 		}
 		if code == http.StatusOK {
 			writeJSON(w, code, map[string]any{"ok": true, "need_restart": false, "status": st, "message": msg})
@@ -137,10 +137,11 @@ func (h *Handler) adminUpdateRollback(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// adminUpdateRestart 退出进程，由 systemd 的 Restart=always 拉起新版本。
+// adminUpdateRestart 退出进程，由守护方拉起新版本：systemd 的 Restart=always
+// 或 Docker 的 restart: unless-stopped（容器内更新即靠这一步生效）。
 //
-// 不用 systemctl（那需要 sudo）：只做优雅退出，重启交给 unit。延迟 500ms 是
-// 了让本次 HTTP 响应先发出去。
+// 不用 systemctl（那需要 sudo）：只做优雅退出。延迟 500ms 是为了让本次 HTTP
+// 响应先发出去。
 func (h *Handler) adminUpdateRestart(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "message": "正在重启，稍后自动恢复"})
 	if f, ok := w.(http.Flusher); ok {
@@ -148,7 +149,7 @@ func (h *Handler) adminUpdateRestart(w http.ResponseWriter, r *http.Request) {
 	}
 	go func() {
 		time.Sleep(500 * time.Millisecond)
-		log.Printf("restart requested from panel: exiting for systemd Restart=always")
+		log.Printf("restart requested from panel: exiting for systemd/docker restart policy")
 		os.Exit(0)
 	}()
 }
