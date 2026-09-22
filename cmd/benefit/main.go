@@ -86,29 +86,37 @@ func main() {
 	}
 }
 
-// claimLine 领取并报出结论。
+// claimLine 签到并报出结论。
 //
-// 上游把领取做成幂等：已领过时同样返回 error_code=0000 且 create_time 不变，
-// 所以「签到成功」这种写法会把「本次空转」当成「新领到」。拿调用前后的
-// create_time 对比才能说清。
+// 签到按天发放，已签过时上游同样返回 error_code=0000 且 create_time 不变，
+// 所以「签到成功」这种写法会把「今天已签过」当成「刚签到」。拿调用前后的
+// create_time 对比才能说清，且基线缺失时不得断言成功。
 func claimLine(c *upstream.Client, cred upstream.SignCredential) {
 	before, err := c.BenefitStatus(cred)
-	if err != nil {
+	baselineOK := err == nil
+	if !baselineOK {
 		fmt.Printf("  签到前状态查询失败: %v\n", err)
+	} else if upstream.ClaimedToday(before, time.Now()) {
+		fmt.Printf("  今天已签到（%s），本次不重复领取\n",
+			time.UnixMilli(before).Format("2006-01-02 15:04:05"))
+		return
 	}
 	claim, err := c.ClaimBenefit(cred)
 	if err != nil {
 		fmt.Printf("  签到失败: %v\n", err)
 		return
 	}
-	switch claim.Status(before) {
-	case upstream.ClaimNew:
+	out := upstream.SigninOutcomeOf(before, baselineOK, claim, time.Now())
+	switch {
+	case !out.Counted:
+		fmt.Println("  签到调用已发出（上游未返回 create_time，无法确认本次是否新领）")
+	case out.NewlyClaimed:
 		fmt.Printf("  签到成功: 本次已领到（%s）\n", time.UnixMilli(claim.CreateTime).Format("2006-01-02 15:04:05"))
-	case upstream.ClaimExisting:
-		fmt.Printf("  未重复发放: 此前已领过，create_time 仍为 %s\n",
+	case out.AlreadyToday:
+		fmt.Printf("  未重复发放: 今天已签过，create_time 仍为 %s\n",
 			time.UnixMilli(claim.CreateTime).Format("2006-01-02 15:04:05"))
 	default:
-		fmt.Println("  领取成功（上游未返回 create_time，无法判断是否本次新领）")
+		fmt.Println("  签到调用已发出（未取得签到前状态，无法确认本次是否新领）")
 	}
 }
 

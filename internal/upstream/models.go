@@ -539,31 +539,51 @@ type ClaimResult struct {
 	UserName   string `json:"user_name"`
 }
 
-// ClaimStatus 一次领取调用相对调用前状态的语义结论。
-type ClaimStatus int
-
-const (
-	// ClaimUnknown 上游未返回 create_time，无法判断。
-	ClaimUnknown ClaimStatus = iota
-	// ClaimNew create_time 被刷新：本次真的领到了。
-	ClaimNew
-	// ClaimExisting create_time 未变且非 0：此前已领过，本次是幂等空转。
-	ClaimExisting
-)
-
-// Status 以调用前的 create_time（before，0 表示调用前从未领取）为基线判定结论。
+// ClaimedToday 报告 createTime 是否落在 now 的同一自然日。
 //
-// 上游把「领取」做成了幂等操作：已领过时同样返回 error_code=0000，create_time
-// 保持不动。实测 POST 发生在 2026-09-22 00:43Z，返回的 create_time 仍是
-// 2026-09-17 13:51Z（早 4.45 天），即那次 POST 并未产生新领取。
-func (r ClaimResult) Status(before int64) ClaimStatus {
-	switch {
-	case r.CreateTime == 0:
-		return ClaimUnknown
-	case r.CreateTime != before:
-		return ClaimNew
-	default:
-		return ClaimExisting
+// 签到按天发放，所以「今天是否已签到」应以日期判定。createTime 为 0 表示从未签到。
+func ClaimedToday(createTime int64, now time.Time) bool {
+	if createTime <= 0 {
+		return false
+	}
+	t := time.UnixMilli(createTime).In(now.Location())
+	return t.Year() == now.Year() && t.YearDay() == now.YearDay()
+}
+
+// SigninOutcome 一次签到调用的结论。
+//
+// 它把「今天是否已签到」与「本次是否真的领到」分开：前者只取决于调用后的
+// create_time，与基线无关；后者必须同时有可信的调用前基线。
+type SigninOutcome struct {
+	// Counted 上游回了可用的 create_time，结论可信。
+	Counted bool
+	// AlreadyToday 调用前该账号今天就已签到（需可信基线）。
+	AlreadyToday bool
+	// NewlyClaimed 本次调用真的领到了当日额度。
+	NewlyClaimed bool
+	// Today 调用后该账号今天处于已签到状态。
+	Today bool
+}
+
+// SigninOutcomeOf 结合调用前后的 create_time 判定一次签到的结论。
+//
+// baselineOK=false 表示调用前的状态没查到。此时刻意不让结论退化成
+// 「create_time 非 0 就是新领到」：上游已签到过时同样返回 error_code=0000
+// 且 create_time 保持不动（实测 POST 发生在 2026-09-22 00:43Z，返回的
+// create_time 仍是 2026-09-17 13:51Z），那种退化会把「今天早已签过」报成
+// 签到成功——每点一次都「成功」，正是要避免的。
+func SigninOutcomeOf(before int64, baselineOK bool, after ClaimResult, now time.Time) SigninOutcome {
+	if after.CreateTime <= 0 {
+		return SigninOutcome{} // 上游没回时间，无法判断
+	}
+	already := baselineOK && ClaimedToday(before, now)
+	today := ClaimedToday(after.CreateTime, now)
+	return SigninOutcome{
+		Counted:      true,
+		AlreadyToday: already,
+		// 基线缺失时不断言新领到：无从得知此前是否已签到。
+		NewlyClaimed: baselineOK && !already && today,
+		Today:        today,
 	}
 }
 

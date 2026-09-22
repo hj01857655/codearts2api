@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"time"
 
 	"codearts2api/internal/auth"
 	"codearts2api/internal/upstream"
@@ -169,30 +170,41 @@ func (h *Handler) adminCheckin(w http.ResponseWriter, r *http.Request) {
 		}
 		token, ak, sk := acct.Auth.Credentials()
 		cred := upstream.SignCredential{AccessKeyID: ak, SecretAccessKey: sk, SecurityToken: token}
-		// 领取前先取基线：GET/POST 响应体逐字节相同（见 upstream.ClaimResult），
-		// 只有拿调用前后的 create_time 比较，才分得清「新领到」与「幂等空转」。
-		// 基线取失败不阻断领取，只降级为不确定结论。
+		// 签到前先取基线：签到按天发放，已签过时上游同样返回 error_code=0000
+		// 且 create_time 不变（见 upstream.SigninOutcomeOf），只有拿到可信基线
+		// 才分得清「今天已签过」与「本次新签」。
 		before, serr := h.cfg.Upstream.BenefitStatus(cred)
-		if serr != nil {
-			log.Printf("claim baseline status failed uid=%s: %v", uid, serr)
-			before = 0
+		baselineOK := serr == nil
+		if !baselineOK {
+			log.Printf("benefit status before claim failed uid=%s: %v", uid, serr)
 		}
-		// 领取（幂等）
-		claim, cerr := h.cfg.Upstream.ClaimBenefit(cred)
-		if cerr != nil {
-			res.Message = "claim: " + cerr.Error()
-			results = append(results, res)
-			continue
+		// 今天已签到就不再打上游写接口：额度当日已发放，重复调用只是空转，
+		// 还会把「已签过」报成一次成功。
+		if baselineOK && upstream.ClaimedToday(before, time.Now()) {
+			res.OK = true
+			res.CreateTime = before
+			res.Message = "今天已签到，本次未重复领取"
+		} else {
+			claim, cerr := h.cfg.Upstream.ClaimBenefit(cred)
+			if cerr != nil {
+				res.Message = "claim: " + cerr.Error()
+				results = append(results, res)
+				continue
+			}
+			out := upstream.SigninOutcomeOf(before, baselineOK, claim, time.Now())
+			switch {
+			case !out.Counted:
+				res.Message = "签到调用已发出（上游未返回时间，无法确认本次是否新领）"
+			case out.NewlyClaimed:
+				res.Message = "本次已签到，领到当日额度"
+			case out.AlreadyToday:
+				res.Message = "今天已签到，本次未重复领取"
+			default:
+				// 基线缺失时不断言成功：此前是否已签过无从得知。
+				res.Message = "签到调用已发出（未取得签到前状态，无法确认本次是否新领）"
+			}
+			res.CreateTime = claim.CreateTime
 		}
-		switch claim.Status(before) {
-		case upstream.ClaimNew:
-			res.Message = "本次已领到当日额度"
-		case upstream.ClaimExisting:
-			res.Message = "此前已领过，本次未重复发放"
-		default:
-			res.Message = "领取成功（上游未返回时间，无法判断是否本次新领）"
-		}
-		res.CreateTime = claim.CreateTime
 		// 再查余额
 		if info, berr := h.cfg.Upstream.BenefitBalanceDetail(cred); berr != nil {
 			res.OK = true
