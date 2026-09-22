@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from "vue";
 import { usePanelStore } from "../stores/panel";
+import type { ServerConfig } from "../api";
 
 const store = usePanelStore();
 
@@ -20,7 +21,7 @@ const form = reactive({
 const saved = ref("");
 const dirty = computed(() => JSON.stringify(form) !== saved.value);
 
-function fillForm(cfg: any) {
+function fillForm(cfg: ServerConfig) {
   form.watch.enabled = !!cfg.watch?.enabled;
   form.watch.poll_minutes = cfg.watch?.poll_minutes ?? 30;
   form.watch.refresh_skew_minutes = cfg.watch?.refresh_skew_minutes ?? 30;

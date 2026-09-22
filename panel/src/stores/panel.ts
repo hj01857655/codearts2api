@@ -1,14 +1,21 @@
 import { defineStore } from "pinia";
-import { api, getKey, setKey, clearKey, ApiError, type Account, type BenefitResult } from "../api";
+import {
+  api, getKey, setKey, clearKey, ApiError,
+  type Account, type BenefitResult, type ServerConfig, type ActionResponse,
+} from "../api";
 
 export interface Overview {
   accounts: Account[];
   models: { id: string }[];
   version?: string;
   region?: string;
-  schedule?: { watch?: Record<string, unknown> };
+  schedule?: Record<string, unknown>;
   [k: string]: unknown;
 }
+
+interface Toast { id: number; msg: string; ok: boolean }
+
+let toastSeq = 0;
 
 export const usePanelStore = defineStore("panel", {
   state: () => ({
@@ -20,20 +27,7 @@ export const usePanelStore = defineStore("panel", {
     loadingOverview: false,
     refreshing: false,
     lastRefreshed: "",
-    // 版本徽标（对齐 sub2api VersionBadge 的状态机）
-    version: "",
-    latestVersion: "",
-    hasUpdate: false,
-    updateChecked: false,
-    updateSupported: true,
-    updateReason: "",
-    canRollback: false,
-    updateChecking: false,
-    updating: false,
-    needRestart: false,
-    updateMsg: "",
-    updateFailed: false,
-    restarting: false,
+    toasts: [] as Toast[],
     // 操作记录
     log: [] as { t: Date; ch: string; text: string }[],
   }),
@@ -49,17 +43,21 @@ export const usePanelStore = defineStore("panel", {
   },
   actions: {
     toast(msg: string, ok = true) {
-      window.dispatchEvent(new CustomEvent("panel:toast", { detail: { msg, ok } }));
+      const id = ++toastSeq;
+      this.toasts.push({ id, msg, ok });
+      window.setTimeout(() => {
+        this.toasts = this.toasts.filter((t: Toast) => t.id !== id);
+      }, 3600);
     },
     logLine(ch: string, text: string) {
       this.log.push({ t: new Date(), ch, text });
       if (this.log.length > 500) this.log.shift();
     },
-    async fetchConfig() {
-      return api("/admin/api/config");
+    async fetchConfig(): Promise<ServerConfig> {
+      return api<ServerConfig>("/admin/api/config");
     },
-    async saveConfig(body: any) {
-      return api("/admin/api/config", { method: "PUT", body: JSON.stringify(body) });
+    async saveConfig(body: ServerConfig): Promise<ActionResponse> {
+      return api<ActionResponse>("/admin/api/config", { method: "PUT", body: JSON.stringify(body) });
     },
     async login(key: string) {
       if (!key.trim()) { this.loginErr = "请输入 API Key"; return; }
@@ -93,7 +91,6 @@ export const usePanelStore = defineStore("panel", {
         const data = await api<Overview>("/admin/api/overview");
         this.overview = data;
         this.accounts = data.accounts || [];
-        if (data.version && !this.updateChecked) this.version = data.version;
         this.lastRefreshed = new Date().toLocaleTimeString();
         return data;
       } finally { this.refreshing = false; }
@@ -107,12 +104,11 @@ export const usePanelStore = defineStore("panel", {
       } catch (e: any) {
         this.toast(e.message, false);
         this.logLine("err", "福利额度查询 · " + e.message);
-        if (e instanceof ApiError && e.status === 401) this.unauthorized();
       }
     },
-    async runAction(path: string, body: unknown, label: string) {
+    async runAction(path: string, body: unknown, label: string): Promise<ActionResponse | null> {
       try {
-        const data = await api(path, { method: "POST", body: JSON.stringify(body || {}) });
+        const data = await api<ActionResponse>(path, { method: "POST", body: JSON.stringify(body || {}) });
         const msg = data.message || (data.ok ? "完成" : "完成（有失败）");
         this.toast(msg, !!data.ok);
         this.logLine(data.ok ? "op" : "err", label + " · " + msg);
@@ -121,7 +117,6 @@ export const usePanelStore = defineStore("panel", {
       } catch (e: any) {
         this.toast(e.message, false);
         this.logLine("err", label + " · " + e.message);
-        if (e instanceof ApiError && e.status === 401) this.unauthorized();
         return null;
       }
     },

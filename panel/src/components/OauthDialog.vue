@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { onMounted, onBeforeUnmount, ref } from "vue";
-import { api } from "../api";
+import { api, type OauthStartResult, type OauthImportResult, type OauthPollResult } from "../api";
 import { usePanelStore } from "../stores/panel";
+import { useModalDialog } from "../composables/useModalDialog";
 
 const emit = defineEmits<{ close: [] }>();
 const store = usePanelStore();
@@ -28,8 +29,8 @@ async function start() {
   load.value = true;
   err.value = "";
   try {
-    const d = await api<any>("/admin/api/oauth/start", { method: "POST", body: "{}" });
-    if (!d.ok || !d.auth_url) throw new Error(d.message || "发起失败");
+    const d = await api<OauthStartResult>("/admin/api/oauth/start", { method: "POST", body: "{}" });
+    if (!d.ok || !d.auth_url || !d.session_id) throw new Error(d.message || "发起失败");
     sessionId.value = d.session_id;
     authUrl.value = d.auth_url;
     ready.value = true;
@@ -56,7 +57,7 @@ async function importCallback() {
   busy.value = true;
   setPoll("正在中转回调…", true);
   try {
-    const d = await api<any>("/admin/api/oauth/import-callback", {
+    const d = await api<OauthImportResult>("/admin/api/oauth/import-callback", {
       method: "POST",
       body: JSON.stringify({ session_id: sessionId.value, callback_url: url }),
     });
@@ -79,7 +80,7 @@ async function poll(silent: boolean) {
   busy.value = true;
   if (!silent) setPoll("正在确认授权结果…", true);
   try {
-    const d = await api<any>("/admin/api/oauth/poll", {
+    const d = await api<OauthPollResult>("/admin/api/oauth/poll", {
       method: "POST",
       body: JSON.stringify({ session_id: sessionId.value }),
     });
@@ -126,14 +127,19 @@ function close() {
   sessionId.value = "";
   emit("close");
 }
-function veilClick(e: MouseEvent) { if (e.target === e.currentTarget) close(); }
+
+
+// 对话框：ESC 关闭（授权途中同样可关，close 会停掉轮询）、锁背景滚动、
+// 打开时焦点落到面板上。组件由 v-if 挂载，所以恒定处于「已打开」状态。
+const panel = ref<HTMLElement | null>(null);
+useModalDialog(() => true, close, panel);
 
 onBeforeUnmount(stopPoll);
 </script>
 
 <template>
-  <div class="veil on" @click="veilClick">
-    <div class="dlg">
+  <div class="veil on" @click.self="close">
+    <div ref="panel" class="dlg" role="dialog" aria-modal="true" aria-label="授权登录" tabindex="-1">
       <header>
         <h3>授权登录</h3>
         <div class="hint">浏览器完成上游账号登录，网关自动载入账号池，无需重启。</div>

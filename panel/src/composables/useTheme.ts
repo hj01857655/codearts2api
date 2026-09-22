@@ -1,4 +1,5 @@
-// 主题管理：data-theme 始终显式落地并指向四套板之一，不做系统跟随。
+// 主题（UI 状态，不是全局配置）：data-theme 始终显式落地并指向四套板之一，
+// 不做系统跟随。放在 composables/ 而非与运行时配置混在 src/ 根下。
 export const THEMES: [string, string][] = [
   ["graphite", "石墨"],
   ["midnight", "午夜"],

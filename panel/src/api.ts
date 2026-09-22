@@ -23,10 +23,50 @@ export interface BenefitResult {
   create_time?: number; message?: string;
 }
 
+export interface ServerConfig {
+  watch?: { enabled?: boolean; poll_minutes?: number; refresh_skew_minutes?: number; keepalive_interval_minutes?: number };
+  keepalive_window?: string;
+  max_concurrent?: number;
+  benefit_auto_claim?: boolean;
+  update_proxy?: string;
+  [k: string]: unknown;
+}
+
+export interface ActionResponse {
+  ok?: boolean;
+  message?: string;
+  results?: BenefitResult[];
+  [k: string]: unknown;
+}
+
 export interface UpdateStatus {
-  current: string; latest?: string; has_update: boolean;
-  can_rollback: boolean; supported: boolean; reason?: string;
+  current?: string; latest?: string; has_update?: boolean;
+  supported?: boolean; reason?: string; can_rollback?: boolean;
   notes?: string; html_url?: string;
+}
+
+export interface UpdateCheckResult {
+  configured?: boolean;
+  message?: string;
+  status?: UpdateStatus;
+}
+
+export interface UpdateActionResult {
+  status?: UpdateStatus;
+  need_restart?: boolean;
+  message?: string;
+}
+
+export interface OauthStartResult {
+  ok?: boolean; auth_url?: string; session_id?: string; message?: string;
+}
+
+export interface OauthImportResult {
+  ok?: boolean; next_url?: string; message?: string;
+}
+
+export interface OauthPollResult {
+  status?: string; ok?: boolean; message?: string;
 }
 
 export class ApiError extends Error {
@@ -39,18 +79,31 @@ export const getKey = () => localStorage.getItem(KEY_STORE) || "";
 export const setKey = (k: string) => localStorage.setItem(KEY_STORE, k);
 export const clearKey = () => localStorage.removeItem(KEY_STORE);
 
-export async function api<T = any>(path: string, opts: RequestInit = {}): Promise<T> {
+let unauthorizedHandler: (() => void) | null = null;
+export function setUnauthorizedHandler(fn: (() => void) | null) { unauthorizedHandler = fn; }
+
+function extractError(data: unknown, raw: string, fallback: string): string {
+  const d = (data ?? {}) as Record<string, unknown>;
+  const err = d.error as Record<string, unknown> | string | undefined;
+  const msg = (err && typeof err === "object" && (err.message || err.code))
+    || d.message
+    || d.error
+    || raw
+    || fallback;
+  return typeof msg === "string" ? msg : JSON.stringify(msg);
+}
+
+export async function api<T = unknown>(path: string, opts: RequestInit = {}): Promise<T> {
   const headers: Record<string, string> = { "Content-Type": "application/json", ...((opts.headers as Record<string, string>) || {}) };
   const key = getKey();
   if (key) headers["Authorization"] = "Bearer " + key;
   const res = await fetch(BASE + path, { ...opts, headers });
   const text = await res.text();
-  let data: any = null;
+  let data: unknown = null;
   try { data = text ? JSON.parse(text) : null; } catch { data = { raw: text }; }
   if (!res.ok) {
-    const err = data && data.error;
-    const msg = (err && (err.message || err.code)) || (data && (data.message || data.error)) || text || res.statusText;
-    throw new ApiError(typeof msg === "string" ? msg : JSON.stringify(msg), res.status);
+    if (res.status === 401 && key) unauthorizedHandler?.();
+    throw new ApiError(extractError(data, text, res.statusText), res.status);
   }
   return data as T;
 }

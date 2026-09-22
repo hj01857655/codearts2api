@@ -2,7 +2,7 @@
 import { computed, onMounted, onBeforeUnmount, ref } from "vue";
 import { usePanelStore } from "../stores/panel";
 import { config } from "../config";
-import { THEMES, currentTheme, applyTheme } from "../theme";
+import { THEMES, currentTheme, applyTheme } from "../composables/useTheme";
 import VersionBadge from "../components/VersionBadge.vue";
 import AccountsView from "./AccountsView.vue";
 import BenefitView from "./BenefitView.vue";
@@ -29,12 +29,14 @@ function switchTo(v: string, keepHash = false) {
   if (!valid.includes(v)) v = "accounts";
   view.value = v;
   if (!keepHash && location.hash.slice(1) !== v) location.hash = v;
+  // 福利额度是唯一要打上游取数的视图，进页面就得自己拉一次（旧版面板
+  // switchView 同款）：只放在 onMounted 时，从导航切进来永远是空表。
+  if (v === "benefit" && !store.benefit) void store.loadBenefit(true);
 }
 function onHash() { switchTo(location.hash.slice(1), true); }
 onMounted(() => {
   window.addEventListener("hashchange", onHash);
   switchTo(location.hash.slice(1) || "accounts", true);
-  if (view.value === "benefit" && !store.benefit) void store.loadBenefit(true);
 });
 onBeforeUnmount(() => window.removeEventListener("hashchange", onHash));
 
@@ -128,7 +130,7 @@ async function refresh() {
           <div v-if="userOpen" class="menu" role="menu">
             <div class="grp">账户</div>
             <div class="who">{{ hasKey ? "API Key 已保存（仅本机浏览器）" : "未设置 API Key" }}</div>
-            <div class="who">v{{ store.version || "-" }}</div>
+            <div class="who">v{{ store.overview?.version || "-" }}</div>
             <button class="danger" role="menuitem" @click="store.logout(); userOpen = false">退出登录</button>
           </div>
         </div>
