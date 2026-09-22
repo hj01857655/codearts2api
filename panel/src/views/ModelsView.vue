@@ -35,7 +35,7 @@ async function copy(id: string) {
       <div class="pad">
         <div class="chips">
           <template v-if="models.length">
-            <button v-for="m in models" :key="m.id" class="chip" :title="'点击复制模型 ID'" @click="copy(m.id)">{{ m.id }}</button>
+            <button v-for="m in models" :key="m.id" class="chip" :title="'点击复制模型 ID：' + m.id" :aria-label="'复制模型 ID ' + m.id" @click="copy(m.id)">{{ m.id }}</button>
           </template>
           <span v-else class="muted">暂无模型</span>
         </div>

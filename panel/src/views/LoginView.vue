@@ -25,7 +25,7 @@ function submit() { void store.login(key.value); }
         <span class="hint">密钥仅保存在本机浏览器 localStorage，请求以 Authorization: Bearer 发送。</span>
       </label>
       <button class="primary" style="width:100%" @click="submit">进入控制台</button>
-      <div v-if="store.loginErr" class="state err" style="margin-top:12px">{{ store.loginErr }}</div>
+      <div v-if="store.loginErr" class="state err" role="alert" style="margin-top:12px">{{ store.loginErr }}</div>
     </div>
   </div>
 </template>

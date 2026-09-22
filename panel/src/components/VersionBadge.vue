@@ -152,7 +152,8 @@ watch(
 
 <template>
   <div ref="badge" class="vbadge">
-    <button :class="hasUpdate ? 'hasupdate' : 'uptodate'" :title="label"
+    <button :class="hasUpdate ? 'hasupdate' : 'uptodate'" :title="label" :aria-label="label"
+      aria-haspopup="dialog" :aria-expanded="open"
       @click.stop="open = !open; if (open && !updateChecked) void check()">
       <span>v{{ version || "-" }}</span>
       <span v-if="hasUpdate" class="updot"><i /><b /></span>
@@ -161,7 +162,7 @@ watch(
     <div v-if="open" class="vdrop">
       <div class="vh">
         <span>软件更新</span>
-        <button :disabled="updateChecking" title="刷新" @click="check">
+        <button :disabled="updateChecking" title="刷新" aria-label="重新检测更新" @click="check">
           <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.6" :class="{ spin: updateChecking }" style="animation:none" stroke-linecap="round" stroke-linejoin="round"><path d="M13.5 8a5.5 5.5 0 1 1-1.6-3.9"/><path d="M13.5 2.5v3h-3"/></svg>
         </button>
       </div>
