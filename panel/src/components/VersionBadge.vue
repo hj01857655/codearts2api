@@ -6,6 +6,7 @@ import { api, ApiError } from "../api";
 const store = usePanelStore();
 const open = ref(false);
 const badge = ref<HTMLElement | null>(null);
+const confirming = ref(false);
 
 const hasUpdate = computed(() => store.hasUpdate);
 const label = computed(() =>
@@ -37,8 +38,15 @@ async function check() {
 }
 
 async function apply() {
+  // 两步确认：首次点击只进入确认态，避免误触直接开始下载长事务。
+  if (!confirming.value) { confirming.value = true; return; }
+  confirming.value = false;
   store.updating = true;
-  store.updateMsg = "开始下载更新，请稍候…"; store.updateFailed = false;
+  applyStart = Date.now();
+  tickApply();
+  applyTimer = setInterval(tickApply, 1000);
+  store.updateMsg = "正在从 GitHub 下载更新（境内服务器直连可能较慢，最长约 10 分钟）…";
+  store.updateFailed = false;
   try {
     const d = await api<any>("/admin/api/update/apply", { method: "POST", body: "{}" });
     if (d.status) {
@@ -55,8 +63,21 @@ async function apply() {
     store.updateFailed = true;
     store.logLine("err", "在线更新 · " + e.message);
     if (e instanceof ApiError && e.status === 401) store.unauthorized();
-  } finally { store.updating = false; }
+  } finally {
+    store.updating = false;
+    if (applyTimer) { clearInterval(applyTimer); applyTimer = null; }
+  }
 }
+
+/* apply 是长事务且服务端无进度上报，用已用时计时给用户持续反馈。 */
+let applyTimer: ReturnType<typeof setInterval> | null = null;
+let applyStart = 0;
+const elapsed = ref(0);
+function tickApply() { elapsed.value = Math.floor((Date.now() - applyStart) / 1000); }
+const elapsedText = () => {
+  const s = elapsed.value;
+  return s < 60 ? s + "s" : Math.floor(s / 60) + "m" + String(s % 60).padStart(2, "0") + "s";
+};
 
 async function rollback() {
   store.updating = true;
@@ -154,9 +175,17 @@ onBeforeUnmount(() => { document.removeEventListener("click", docClick); if (tim
             <div style="opacity:.75">v{{ store.latestVersion }}</div>
           </div>
         </div>
-        <button class="wbtn go" :disabled="store.updating" @click="apply">
-          <span v-if="store.updating">更新中…</span><span v-else>立即更新</span>
-        </button>
+        <template v-if="store.updating">
+          <div class="card">
+            <div class="spin" />
+            <div class="grow">
+              <div style="font-weight:550">下载中（已用时 {{ elapsedText() }}）</div>
+              <div style="opacity:.75">境内直连 GitHub 可能较慢，请保持页面打开</div>
+            </div>
+          </div>
+        </template>
+        <button v-else-if="confirming" class="wbtn go" @click="apply">确认更新到 v{{ store.latestVersion }}？</button>
+        <button v-else class="wbtn go" @click="apply">立即更新</button>
       </template>
 
       <template v-else-if="hasUpdate && !store.updateSupported">
