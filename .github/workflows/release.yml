@@ -22,11 +22,9 @@ jobs:
         with:
           go-version: "1.22"
 
-      # 面板是 Vue3+Vite 工程，发布前重建一次内联单文件（panel-dist 已随仓库
-      # 提交作为免 Node 兜底，这里保证发布产物与 panel/ 源码一致）。
-      - uses: oven-sh/setup-bun@v2
-      - name: Build panel
-        run: cd panel && bun install --frozen-lockfile && bun run build
+      # 面板产物 panel-dist 随仓库提交，直接进入发布物；不要在这里重建——
+      # 跨平台行尾字节差会让工作区变 dirty，goreleaser 会拒绝发布。
+      # 面板源码变更须本地构建后连同 panel-dist 一起提交。
 
       - name: Test
         run: go test ./...

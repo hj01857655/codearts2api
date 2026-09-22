@@ -75,6 +75,7 @@ async function refresh() {
       <div class="brand">
         <div class="name">{{ config.serviceTitle }}</div>
         <div class="sub">{{ sub || "控制台" }}</div>
+        <VersionBadge />
       </div>
       <ul>
         <li v-for="v in VIEWS" :key="v.id">
@@ -105,7 +106,6 @@ async function refresh() {
         <button class="icon ghost" title="刷新" aria-label="刷新" @click="refresh">
           <svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M13.5 8a5.5 5.5 0 1 1-1.6-3.9"/><path d="M13.5 2.5v3h-3"/></svg>
         </button>
-        <VersionBadge />
         <div class="menu-wrap">
           <button class="icon ghost" title="设置" aria-label="设置" aria-haspopup="menu" :aria-expanded="settingsOpen" @click.stop="toggleSettings">
             <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3.2"/><path d="M19.6 14.4a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1.03 1.55v.17a2 2 0 1 1-4 0v-.09a1.7 1.7 0 0 0-1.11-1.55 1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.7 1.7 0 0 0 .34-1.87 1.7 1.7 0 0 0-1.55-1.03h-.17a2 2 0 1 1 0-4h.09a1.7 1.7 0 0 0 1.55-1.11 1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.7 1.7 0 0 0 1.87.34h.08a1.7 1.7 0 0 0 1.03-1.55v-.17a2 2 0 1 1 4 0v.09a1.7 1.7 0 0 0 1.03 1.55 1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.7 1.7 0 0 0-.34 1.87v.08a1.7 1.7 0 0 0 1.55 1.03h.17a2 2 0 1 1 0 4h-.09a1.7 1.7 0 0 0-1.55 1.03z"/></svg>
