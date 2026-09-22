@@ -19,3 +19,6 @@ config.json
 !.vscode/launch.json
 !.vscode/tasks.json
 !.vscode/extensions.json
+
+# IDE 本地产物
+.arts/
