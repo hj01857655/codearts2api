@@ -183,9 +183,13 @@ go func() {
 **Docker（自更新不适用）**
 
 - 容器内替换二进制，下一次 `docker compose up --build` 就被镜像内容覆盖，白做。
-- 正确做法是走镜像：推 ghcr.io，`docker compose pull && up -d`。
+- 升级路径：**拉源码后重建镜像**——`git fetch --tags && git checkout <tag> &&
+  docker compose up -d --build`。
+  注意：本项目**没有**镜像仓库发布链路（`docker-compose.yml` 只有 `build:` 段、
+  没有 `image:`；goreleaser 只发 `tar.gz`，不推镜像），所以 `docker compose pull`
+  会报找不到镜像，不要写成提示。
 - 因此更新端点应能识别「我在容器里」（如存在 `/.dockerenv`）并明确拒绝自更新，
-  提示改用 `docker compose pull`，而不是静默失败。
+  提示改用上述重建路径，而不是静默失败。
 
 ## 7. 边界与取舍
 

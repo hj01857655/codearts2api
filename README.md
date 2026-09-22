@@ -356,8 +356,13 @@ cp config.example.jsonc config.json
 docker compose up -d --build
 ```
 
-容器内不支持在线更新（会被下次 `up --build` 覆盖），升级改用
-`docker compose pull && docker compose up -d`。
+容器内不支持在线更新（会被下次 `up --build` 覆盖），升级改用拉源码后重建：
+
+```bash
+cd /opt/codearts2api
+git fetch --tags && git checkout <新版本 tag>
+docker compose up -d --build
+```
 
 ## 项目结构
 

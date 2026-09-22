@@ -1,4 +1,4 @@
-# WorkBuddy 任务提示词：codearts2api Docker 升级到 v0.1.5
+# WorkBuddy 任务提示词：codearts2api Docker 升级到 v0.1.6
 
 > 用途：把本文件内容整段粘贴给 WorkBuddy 执行。任务范围**仅限 Docker 部署形态**。
 > 供 WorkBuddy 阅读的项目事实见下文「二、环境事实」，均已由外部核实，无需重新摸索。
@@ -7,7 +7,7 @@
 
 ## 一、任务目标
 
-把腾讯云轻量实例上现有的 **Docker 部署** codearts2api 原地升级到 `v0.1.5`：
+把腾讯云轻量实例上现有的 **Docker 部署** codearts2api 原地升级到 `v0.1.6`：
 
 1. 保留全部账号凭证与配置（`auths/`、`data/`、`config.json` 均不得丢失或改写内容）
 2. （可选）确认 `update_repo` —— 自 `v0.1.5` 起已有内置默认值，无需再手工补
@@ -28,12 +28,12 @@
 | 项目目录 | `/opt/codearts2api` |
 | 运行进程 | `codearts2api -config config.json`（容器内） |
 | 上游仓库 | https://github.com/hj01857655/codearts2api |
-| 可用 Release | `v0.1.0`（旧）、`v0.1.1`、`v0.1.2`、`v0.1.3`、`v0.1.4`、**`v0.1.5`（本次目标）**；`v0.1.2` 起带 Docker 版本注入，`v0.1.3` 起带新控制台面板，`v0.1.5` 起修掉一批模型发现与面板读数缺陷 |
+| 可用 Release | `v0.1.0`（旧）、`v0.1.1`、`v0.1.2`、`v0.1.3`、`v0.1.4`、`v0.1.5`、**`v0.1.6`（本次目标）**；`v0.1.2` 起带 Docker 版本注入，`v0.1.3` 起带新控制台面板，`v0.1.5` 起修掉一批模型发现与面板读数缺陷 |
 
 现状问题（本次要修的）：
 
 - 现有代码是旧版：升级前那份 `Dockerfile` 构建时**未注入版本号**，所以容器里 `codearts2api -version` 永远报 `dev`、`/status` 的 `version` 字段为空
-  （该缺陷已在 `v0.1.2` 修复：`Dockerfile` 新增 `VERSION`/`COMMIT`/`BUILD_DATE` 构建参数，`docker-compose.yml` 透传。**`v0.1.1` 及更早不含此修复**；本次升到 `v0.1.5` 同样包含它）
+  （该缺陷已在 `v0.1.2` 修复：`Dockerfile` 新增 `VERSION`/`COMMIT`/`BUILD_DATE` 构建参数，`docker-compose.yml` 透传。**`v0.1.1` 及更早不含此修复**；本次升到 `v0.1.6` 同样包含它）
 - `v0.1.4` 及更早的版本里 `update_repo` **没有内置默认值**（只写在示例文件里），所以 `config.json` 缺这一项时控制台「检测更新」只会显示「未配置在线更新」。**自 `v0.1.5` 起默认已指向本项目 Release**，不配置也能用；只有显式写成 `""` 才关闭
 - `/opt/codearts2api/config.json` 里的注释写着 `max_concurrent`「默认 5」，属旧文档错误（代码内置默认是 1），升级后会随新模板纠正
 
@@ -65,7 +65,7 @@ docker compose ps
 
 判断要点：
 
-- 如果 `origin` 指向的是上游 `HITZY2002/codearts2api` 而不是 `hj01857655/codearts2api`，则需要增加远端后再拉取——`v0.1.5` 只存在于 `hj01857655` 这个 fork 上：
+- 如果 `origin` 指向的是上游 `HITZY2002/codearts2api` 而不是 `hj01857655/codearts2api`，则需要增加远端后再拉取——`v0.1.6` 只存在于 `hj01857655` 这个 fork 上：
   ```bash
   git remote add fork https://github.com/hj01857655/codearts2api.git
   git fetch --tags fork
@@ -73,12 +73,12 @@ docker compose ps
 - **机器拉不到 github.com 时的备选方案**：本机实测过 `git fetch` 报 `Failed to connect to github.com port 443`（大陆机房常见）。若遇到同样情况，不要反复重试，改用镜像加速或让操作者从外部把仓库传到机器上（如 `git bundle` / `rsync`）。**不要**改为去 `git clone` 一个来源不明的镜像仓库。
 - 如果 `git status --short` 列出 `config.json`，那是正常的（该文件被 `.gitignore` 忽略，属未跟踪）。其余改动请先报告。
 
-### 步骤 2：拉取 v0.1.5 并重建镜像
+### 步骤 2：拉取 v0.1.6 并重建镜像
 
 ```bash
 cd /opt/codearts2api
 git fetch --tags origin        # 或 fork，见步骤 1
-git checkout v0.1.5
+git checkout v0.1.6
 
 # 传入版本号后再构建：Dockerfile 已支持 VERSION/COMMIT/BUILD_DATE 构建参数，
 # 不传则容器内二进制报 dev（与 Releases 的版本号对不上）。
@@ -115,7 +115,7 @@ docker compose ps
 ### 步骤 4：验收
 
 ```bash
-# 4.1 容器内二进制版本（期望输出 v0.1.5，含 commit 与构建时间）
+# 4.1 容器内二进制版本（期望输出 v0.1.6，含 commit 与构建时间）
 docker compose exec codearts2api codearts2api -version
 
 # 4.2 版本字段已注入（/status 需要鉴权；密钥从配置读取，不打印）
@@ -138,9 +138,9 @@ curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:7866/healthz
 
 | 检查项 | 期望结果 |
 | --- | --- |
-| `codearts2api -version` | `codearts2api v0.1.5 (commit ..., built ...)`（不再是 `dev`） |
+| `codearts2api -version` | `codearts2api v0.1.6 (commit ..., built ...)`（不再是 `dev`） |
 | `docker compose ps` | 容器 `Up`，7866 映射正常 |
-| `/status` 的 `version` | 不再是空值，为 `v0.1.5` |
+| `/status` 的 `version` | 不再是空值，为 `v0.1.6` |
 | 控制台顶栏 | 齿轮右侧有用户菜单按钮（显示「已登录」/「未设置密钥」），点开含当前版本与退出登录 |
 | `/status` 的账号数 | 与升级前一致（**不得减少**，账号数减少说明凭证卷出问题，立即停止并报告）；可用 `/admin/api/overview` 的 `stats.total` 快速核对 |
 | 模型列表 | 面板「模型」页的「重新获取」点击后显示「已重新发现 N 个模型」（这是 `v0.1.5` 新接的真刷新端点，会绕过 1h 缓存直打上游）；列表数量**不应少于升级前**——`v0.1.5` 修掉了「主 agent 无模型就丢掉整路来源」的缺陷，通常会更全 |
@@ -149,7 +149,7 @@ curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:7866/healthz
 | `/healthz` | 有账号时 200；无账号时 503（属正常设计，不是故障） |
 | `/admin/api/update/check` | 明确提示**容器内不支持在线更新，需改用镜像升级**（见下方说明） |
 
-**关于「检测更新」的预期结果，务必注意**：本项目的在线更新功能设计上**只在非容器环境生效**，容器内会被明确拒绝，理由是容器里替换二进制会在下次重建时被镜像内容覆盖，属白做。因此这里返回「不支持 / 请改用镜像 `docker compose pull && docker compose up -d`」类提示是**正确行为，不是故障，不要试图绕过或修改**。
+**关于「检测更新」的预期结果，务必注意**：本项目的在线更新功能设计上**只在非容器环境生效**，容器内会被明确拒绝，理由是容器里替换二进制会在下次重建时被镜像内容覆盖，属白做。因此这里返回「不支持 / 请改用镜像升级」类提示是**正确行为，不是故障，不要试图绕过或修改**。（`v0.1.5` 的提示词曾错误地写成 `docker compose pull && docker compose up -d`，但本项目没有镜像仓库发布链路，该命令会报找不到镜像；`v0.1.6` 起已修正为上一节的拉源码重建路径，`update/check` 会直接给出该命令。）
 
 Docker 形态下的升级路径永远是重建镜像，本次任务执行的正是这条路径。
 

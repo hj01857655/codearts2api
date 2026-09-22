@@ -157,7 +157,11 @@ func (s *Service) Detected() (bool, string) {
 	if runtime.GOOS != "linux" {
 		return false, "仅 Linux + systemd 支持在线更新（当前 " + runtime.GOOS + "）"
 	}
-	return false, "容器内更新会被下次重建覆盖，请改用镜像：docker compose pull && docker compose up -d"
+	// 不能建议 docker compose pull：本项目没有镜像仓库发布链路（docker-compose.yml
+	// 只有 build: 段、没有 image:，goreleaser 也不推镜像），pull 只会报找不到镜像。
+	// 真实升级路径是拉源码后重建镜像。
+	return false, "容器内更新会被下次重建覆盖，请改用镜像升级：在部署目录执行 " +
+		"git fetch --tags && git checkout <新版本 tag> && docker compose up -d --build"
 }
 
 // Current 当前版本。
