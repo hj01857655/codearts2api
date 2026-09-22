@@ -61,9 +61,9 @@ const note = computed(() => {
   return c === results.length ? results.length + " 个账号" : c + " / " + results.length + " 个账号有余额";
 });
 
-// 全部账号今日均已签到：此时再点「全部签到」只会得到「未重复领取」，
-// 故置灰。仅在结论可信时才置灰——没查过、上游没返回时间、或任一账号查询
-// 失败都不算，否则会把「不知道」当成「已签到」而挡住真正需要的签到。
+// 所有账号今日均已签到：再点只会得到「未重复领取」，故置灰。
+// 仅在结论可信时才置灰——没查过、上游没返回时间、或任一账号查询失败都不算，
+// 否则会把「不知道」当成「已签到」而挡住真正需要的签到。
 const allSignedToday = computed(() => {
   const results = store.benefit?.results || [];
   if (!results.length) return false;
@@ -78,7 +78,7 @@ async function claimAll() {
   confirmingClaim.value = false;
   claiming.value = true;
   try {
-    const d = await store.runAction("/admin/api/checkin", {}, "全部签到");
+    const d = await store.runAction("/admin/api/checkin", {}, "今日签到");
     if (d && d.results) store.applyBenefitResults(d.results);
   } finally { claiming.value = false; }
 }
@@ -98,7 +98,7 @@ async function claimAll() {
           :title="allSignedToday ? '所有账号今日均已签到，无需重复操作' : ''"
           @click="confirmingClaim = true"
         >
-          {{ claiming ? "签到中…" : allSignedToday ? "今日已全部签到" : "全部签到" }}
+          {{ claiming ? "签到中…" : allSignedToday ? "今日已签到" : "今日签到" }}
         </button>
       </header>
       <div class="tbl-wrap">
@@ -160,9 +160,9 @@ async function claimAll() {
     <ConfirmDialog
       v-if="confirmingClaim"
       :busy="claiming"
-      title="全部签到"
-      message="将对账号池内全部账号发起今日签到。福利额度按日发放，需每天签到才能拿到当日额度；同一天内重复执行不会重复领取，但会逐个账号访问上游。"
-      confirm-label="全部签到"
+      title="今日签到"
+      message="将对账号池内全部账号发起今日签到。额度按日发放，需每天签到才能拿到当日额度；同一天内重复执行不会重复领取。"
+      confirm-label="今日签到"
       @confirm="claimAll"
       @cancel="confirmingClaim = false"
     />
