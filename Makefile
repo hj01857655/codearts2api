@@ -13,7 +13,12 @@ LDFLAGS := -X main.version=$(VERSION) -X main.commit=$(COMMIT) -X main.buildDate
 
 all: linux
 
-linux:
+# 面板前端：Vue3+Vite 工程，构建产物内联为单文件嵌入 internal/server/panel-dist。
+# package-lock.json 不提交（bun 管理），CI/本地统一用 bun。
+panel:
+	cd panel && bun install --frozen-lockfile && bun run build
+
+linux: panel
 	@mkdir -p $(BINDIR)
 	GOOS=linux GOARCH=amd64 CGO_ENABLED=0 $(GO) build -buildvcs=false -ldflags "$(LDFLAGS)" -o $(BINDIR)/codearts2api ./cmd/server
 	GOOS=linux GOARCH=amd64 CGO_ENABLED=0 $(GO) build -buildvcs=false -ldflags "$(LDFLAGS)" -o $(BINDIR)/codearts2api-login ./cmd/login
