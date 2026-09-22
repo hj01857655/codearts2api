@@ -61,9 +61,6 @@ type availEntry struct {
 	at     time.Time
 }
 
-// probesStop 在服务退出时关闭，让带 sleep 的探测循环尽快结束。
-var probesStop = make(chan struct{})
-
 var availability = struct {
 	sync.Mutex
 	byKey     map[string]availEntry // accountID|modelLower -> 状态
@@ -242,10 +239,24 @@ func upstreamUnavailableReasonText(s string) string {
 // StartAvailabilityProber 供 main 启动后台探测器。
 func (h *Handler) StartAvailabilityProber(ctx context.Context) { h.startAvailabilityProber(ctx) }
 
+// stopProbes 关闭探测停止信道，让 runProbes 里带 sleep 的循环尽快结束。
+// 只关一次：startAvailabilityProber 可能被重复调用。
+func (h *Handler) stopProbes() {
+	if h.probeStop == nil {
+		return
+	}
+	h.probeStopOnce.Do(func() { close(h.probeStop) })
+}
+
 // startAvailabilityProber 后台周期性探测：把「发现到但还没结论」的模型试一遍。
 // 只在有账号且拿到目录后才干活，避免空转打上游。
 func (h *Handler) startAvailabilityProber(ctx context.Context) {
 	go func() {
+		// 退出时先放掉带 sleep 的探测循环，避免关停被 probeGap 拖住。
+		go func() {
+			<-ctx.Done()
+			h.stopProbes()
+		}()
 		// 启动后先等服务预热：立刻探测会和刚接入的客户端抢账号槽位。
 		select {
 		case <-ctx.Done():
@@ -266,16 +277,37 @@ func (h *Handler) startAvailabilityProber(ctx context.Context) {
 	}()
 }
 
+// beginSweep 认领一轮探测；已有一轮在跑时返回 false。
+//
+// 两个入口（后台周期探测与 /v1/models 触发的按需探测）共用它：sweeping 是
+// 互斥位，lastSweep 是周期探测的频率阀。force=false 时才受频率阀限制，否则
+// 用户在面板重新拉取模型后会白白跳过探测。
+func beginSweep(force bool) bool {
+	availability.Lock()
+	defer availability.Unlock()
+	if availability.sweeping {
+		return false
+	}
+	if !force && time.Since(availability.lastSweep) < probeInterval/2 {
+		return false
+	}
+	availability.sweeping = true
+	availability.lastSweep = time.Now()
+	return true
+}
+
+func endSweep() {
+	availability.Lock()
+	availability.sweeping = false
+	availability.Unlock()
+}
+
 // sweepAvailability 对所有健康账号的已发现模型做一轮探测（跳过已有结论的）。
 func (h *Handler) sweepAvailability() {
-	availability.Lock()
-	if time.Since(availability.lastSweep) < probeInterval/2 {
-		availability.Unlock()
+	if !beginSweep(false) {
 		return
 	}
-	availability.lastSweep = time.Now()
-	availability.Unlock()
-
+	defer endSweep()
 	for _, acct := range h.pendingProbes() {
 		h.probeModel(acct.acct, acct.model)
 	}
@@ -321,7 +353,7 @@ func (h *Handler) runProbes(items []pendingProbe) {
 		if !first {
 			select {
 			case <-time.After(probeGap):
-			case <-probesStop:
+			case <-h.probeStop:
 				return
 			}
 		}

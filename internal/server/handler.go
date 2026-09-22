@@ -157,8 +157,9 @@ type Handler struct {
 
 	convMu sync.Mutex
 	chats  map[string]string // account → 最近 chat_id
-	// 黏性路由：conversation_id → account_name（多轮续接锁定同一账号，减少上游并发会话占用）。
-	convAcct map[string]string
+	// 黏性路由：conversation_id → 账号 + 最后使用时间（多轮续接锁定同一账号，
+	// 减少上游并发会话占用）。按时间淘汰，见 convStateTTL。
+	convAcct map[string]convRoute
 
 	loginMu sync.Mutex
 	logins  map[string]*pendingLogin
@@ -167,6 +168,12 @@ type Handler struct {
 	updater *update.Service
 	// updateMu 串行化更新/回滚/重启，避免重复点触发并发替换。
 	updateMu sync.Mutex
+
+	// probeStop 服务退出时关闭，让带 probeGap 睡眠的探测循环尽快结束。
+	// 每个 Handler 一份（而非包级变量）：测试会构造多个 Handler，包级信道一旦
+	// 被关掉，后续测试里的探测循环就永远无法发出探针。
+	probeStop     chan struct{}
+	probeStopOnce sync.Once
 }
 
 // pendingLogin WebUI 登录中间状态。
@@ -214,10 +221,11 @@ func NewHandler(cfg Config) *Handler {
 		cfg.LoginConfig = upstream.DefaultLoginConfig()
 	}
 	h := &Handler{
-		cfg:      cfg, mux: http.NewServeMux(), oauth: newOAuthStore(),
+		cfg: cfg, mux: http.NewServeMux(), oauth: newOAuthStore(),
 		settings: newSettingsStore(settingsPathFor(cfg)),
 		chats:    map[string]string{}, logins: map[string]*pendingLogin{},
-		convAcct: map[string]string{},
+		convAcct:  map[string]convRoute{},
+		probeStop: make(chan struct{}),
 	}
 	h.registerConfigRoutes()
 	h.loadChats()
@@ -289,7 +297,24 @@ func (h *Handler) withAuth(next http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
+// healthz 健康检查（免鉴权）。
+//
+// 账号池里一个可用账号都没有时必须报 503：容器 healthcheck 与反代都按这个
+// 状态码决定是否摘掉实例，只回「进程还活着」会把整池账号全挂的实例报成健康，
+// 请求继续打到必然失败的实例上（README 与 docs/workbuddy-docker-upgrade.md
+// 承诺的就是这个语义）。
 func (h *Handler) healthz(w http.ResponseWriter, r *http.Request) {
+	if h.cfg.Pool == nil { // 未接账号池（仅测试构造），无从判定
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("ok"))
+		return
+	}
+	total, healthy, _, _ := h.cfg.Pool.Stats()
+	if healthy == 0 {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_, _ = fmt.Fprintf(w, "no healthy account (total=%d)", total)
+		return
+	}
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write([]byte("ok"))
 }
@@ -538,22 +563,15 @@ func (h *Handler) modelList() []map[string]any {
 }
 
 // probeUnknownAsync 后台探测「还没有结论」的模型，不阻塞请求。
+//
+// 与后台周期探测共用 sweeping 互斥位：两个入口同时开跑会让探针成倍占用
+// 上游会话槽位（探针仍会先过账号并发锁，所以这里只是一层省事的去重）。
 func (h *Handler) probeUnknownAsync() {
-	availability.Lock()
-	busy := availability.sweeping
-	if !busy {
-		availability.sweeping = true
-	}
-	availability.Unlock()
-	if busy {
+	if !beginSweep(true) {
 		return
 	}
 	go func() {
-		defer func() {
-			availability.Lock()
-			availability.sweeping = false
-			availability.Unlock()
-		}()
+		defer endSweep()
 		h.runProbes(h.pendingProbes())
 	}()
 }
@@ -844,7 +862,7 @@ func (h *Handler) chatCompletions(w http.ResponseWriter, r *http.Request) {
 	stickyAcct := ""
 	if explicitChat {
 		h.convMu.Lock()
-		stickyAcct = h.convAcct[req.ConversationID]
+		stickyAcct = h.convAcct[req.ConversationID].Account
 		h.convMu.Unlock()
 	}
 	msgs := buildUpstreamMessages(req, toolsOn)
@@ -885,6 +903,9 @@ func (h *Handler) chatCompletions(w http.ResponseWriter, r *http.Request) {
 			log.Printf("account %s concurrent limit reached after wait, trying next", acct.Name)
 			continue
 		}
+		// lockHeld 跟踪槽位所有权：下面的排队重试会先释放再重新获取，
+		// 重新获取失败时绝不能再释放一次（会白白放开别人的槽位）。
+		lockHeld := true
 
 		ok, verr := h.cfg.Pool.Validate(acct)
 		if verr == nil && !ok {
@@ -957,6 +978,7 @@ func (h *Handler) chatCompletions(w http.ResponseWriter, r *http.Request) {
 				log.Printf("upstream queue limit retry=%d/%d account=%s, waiting %s", retry+1, h.cfg.QueueMaxAttempts, acct.Name, h.cfg.QueueRetryDelay)
 				// 释放锁让其他请求有机会，等待后重新获取
 				h.cfg.Pool.ReleaseLock(acct.Name)
+				lockHeld = false
 				select {
 				case <-time.After(h.cfg.QueueRetryDelay):
 				case <-r.Context().Done():
@@ -965,14 +987,17 @@ func (h *Handler) chatCompletions(w http.ResponseWriter, r *http.Request) {
 				}
 				if !h.cfg.Pool.AcquireLockWait(acct.Name, 30*time.Second) {
 					lastErr = errors.New("concurrent limit: could not reacquire lock after wait")
-					break
+					break // lockHeld 已置 false：后面不得再释放它没拿到的槽位
 				}
+				lockHeld = true
 				continue
 			}
 			break // 非并发错误，跳出重试
 		}
 		if serr != nil {
-			h.cfg.Pool.ReleaseLock(acct.Name) // 释放槽位再换号
+			if lockHeld {
+				h.cfg.Pool.ReleaseLock(acct.Name) // 释放槽位再换号
+			}
 			lastErr = serr
 			if h.handleUpstreamError(acct, model, serr) {
 				// 模型级错误：换账号也是同样结果，直接给客户端明确答复。
@@ -995,7 +1020,8 @@ func (h *Handler) chatCompletions(w http.ResponseWriter, r *http.Request) {
 			}
 			h.convMu.Lock()
 			h.chats[acct.Name] = chatID
-			h.convAcct[req.ConversationID] = acct.Name // 黏性路由：续接锁定同账号
+			// 黏性路由：续接锁定同账号
+			h.convAcct[req.ConversationID] = convRoute{Account: acct.Name, At: time.Now().Unix()}
 			h.convMu.Unlock()
 			h.saveChats()
 		}
@@ -1322,6 +1348,40 @@ func validChatID(s string) bool {
 	return true
 }
 
+// convRoute 一条黏性路由：会话落在哪个账号，以及最后一次使用时间（用于淘汰）。
+//
+// 账号名要跨重启保留：convAcct 是请求期就读的状态，只留在内存里意味着重启后
+// 多轮会话会被切到别的账号。
+type convRoute struct {
+	Account string `json:"account"`
+	At      int64  `json:"at"`
+}
+
+// convStateTTL 黏性路由保留期。上游 V2 不保留语义上下文，历史完全由客户端
+// 每轮重放，长期没再出现的会话已被放弃；不淘汰则 convAcct 会随 conversation_id
+// 数量无限增长（内存与磁盘文件一起涨）。
+const convStateTTL = 7 * 24 * time.Hour
+
+// pruneConvRoutes 丢弃超过保留期的黏性路由，返回删除条数。调用方须持 convMu。
+func (h *Handler) pruneConvRoutes() int {
+	cutoff := time.Now().Add(-convStateTTL).Unix()
+	dropped := 0
+	for id, rt := range h.convAcct {
+		if rt.At < cutoff {
+			delete(h.convAcct, id)
+			dropped++
+		}
+	}
+	return dropped
+}
+
+// convStatePayload 会话状态文件格式。旧版本写的是扁平的 account→chat_id map，
+// loadChats 仍兼容读取。
+type convStatePayload struct {
+	Chats    map[string]string    `json:"chats"`
+	ConvAcct map[string]convRoute `json:"conv_acct"`
+}
+
 func (h *Handler) loadChats() {
 	if h.cfg.ConvStateFile == "" {
 		return
@@ -1330,14 +1390,42 @@ func (h *Handler) loadChats() {
 	if err != nil {
 		return
 	}
-	_ = json.Unmarshal(raw, &h.chats)
+	var file convStatePayload
+	if json.Unmarshal(raw, &file) != nil {
+		return
+	}
+	if file.Chats == nil && file.ConvAcct == nil {
+		_ = json.Unmarshal(raw, &h.chats) // 旧格式：扁平 map
+		return
+	}
+	if file.Chats != nil {
+		h.chats = file.Chats
+	}
+	if file.ConvAcct != nil {
+		h.convAcct = file.ConvAcct
+		// 构造期尚无并发，但仍按 pruneConvRoutes 的约定持锁，避免日后被
+		// 重载路径复用时漏掉。
+		h.convMu.Lock()
+		h.pruneConvRoutes()
+		h.convMu.Unlock()
+	}
 }
 
+// saveChats 持久化会话状态。
+//
+// 取快照必须在 convMu 内：storeChat 的调用约定是「先解锁再落盘」，并发请求下
+// 直接 Marshal 一个正在被写的 map 会触发 Go 的致命并发 map 读写（进程直接退出）。
 func (h *Handler) saveChats() {
 	if h.cfg.ConvStateFile == "" {
 		return
 	}
-	raw, _ := json.MarshalIndent(h.chats, "", "  ")
+	h.convMu.Lock()
+	h.pruneConvRoutes() // 顺带回收内存里的过期路由，不只写盘时裁剪
+	raw, err := json.MarshalIndent(convStatePayload{Chats: h.chats, ConvAcct: h.convAcct}, "", "  ")
+	h.convMu.Unlock()
+	if err != nil {
+		return
+	}
 	if err := os.WriteFile(h.cfg.ConvStateFile+".tmp", raw, 0o600); err != nil {
 		return
 	}
