@@ -20,6 +20,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"net/url"
 	"os"
@@ -30,6 +31,22 @@ import (
 	"sync"
 	"time"
 )
+
+// newProxyTransport 按代理 URL 构造 HTTP 传输层。http/https 走 CONNECT 隧道；
+// socks5 由 http.Transport.Proxy 原生支持。仅用于更新流量，不碰业务上游。
+func newProxyTransport(proxyURL string) (*http.Transport, error) {
+	u, err := url.Parse(proxyURL)
+	if err != nil {
+		return nil, fmt.Errorf("parse proxy url: %w", err)
+	}
+	switch strings.ToLower(u.Scheme) {
+	case "http", "https", "socks5":
+		// http.Transport.Proxy 原生支持这三种 scheme。
+	default:
+		return nil, fmt.Errorf("unsupported proxy scheme %q (want http/https/socks5)", u.Scheme)
+	}
+	return &http.Transport{Proxy: http.ProxyURL(u)}, nil
+}
 
 // maxArchiveSize 归档体积上限，防止超大响应打爆磁盘。
 const maxArchiveSize = 200 << 20 // 200 MiB
@@ -95,6 +112,9 @@ type Service struct {
 	// 下载白名单：默认只允许 GitHub 系域名；http 与未知主机一律拒绝。
 	// 测试用 httptest 时会显式放开 127.0.0.1。
 	allowedHosts []string
+	// proxyURL 更新流量的代理地址（http/https/socks5）；空为直连。
+	// 境内服务器直连 GitHub 下载域名常被断连，走代理是 sub2api 同款解法。
+	proxyURL string
 }
 
 // Option 构造选项。
@@ -115,6 +135,13 @@ func WithAllowedHosts(hosts ...string) Option {
 	return func(s *Service) { s.allowedHosts = hosts }
 }
 
+// WithProxy 为更新流量配置代理（对齐 sub2api 的 update.proxy_url：境内服务器
+// 直连 GitHub 的下载域名常被断连，走代理是官方解决方案）。支持
+// http/https/socks5 协议；空串恢复直连。仅在构造期生效。
+func WithProxy(proxyURL string) Option {
+	return func(s *Service) { s.proxyURL = strings.TrimSpace(proxyURL) }
+}
+
 // New 构造更新服务。repo 形如 "owner/name"，version 为当前版本。
 func New(repo, version string, opts ...Option) *Service {
 	s := &Service{
@@ -127,6 +154,14 @@ func New(repo, version string, opts ...Option) *Service {
 	}
 	for _, o := range opts {
 		o(s)
+	}
+	if s.proxyURL != "" {
+		tr, err := newProxyTransport(s.proxyURL)
+		if err != nil {
+			log.Printf("update: proxy %q init failed, using direct connection: %v", s.proxyURL, err)
+		} else {
+			s.client.Transport = tr
+		}
 	}
 	return s
 }

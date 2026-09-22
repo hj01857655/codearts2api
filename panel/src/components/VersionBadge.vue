@@ -6,7 +6,7 @@ import { api, ApiError } from "../api";
 const store = usePanelStore();
 const open = ref(false);
 const badge = ref<HTMLElement | null>(null);
-const confirming = ref(false);
+const showConfirm = ref(false);
 
 const hasUpdate = computed(() => store.hasUpdate);
 const label = computed(() =>
@@ -38,9 +38,7 @@ async function check() {
 }
 
 async function apply() {
-  // 两步确认：首次点击只进入确认态，避免误触直接开始下载长事务。
-  if (!confirming.value) { confirming.value = true; return; }
-  confirming.value = false;
+  showConfirm.value = false;
   store.updating = true;
   applyStart = Date.now();
   tickApply();
@@ -183,8 +181,7 @@ onBeforeUnmount(() => { document.removeEventListener("click", docClick); if (tim
             </div>
           </div>
         </template>
-        <button v-else-if="confirming" class="wbtn go" @click="apply">确认更新到 v{{ store.latestVersion }}？</button>
-        <button v-else class="wbtn go" @click="apply">立即更新</button>
+        <button v-else class="wbtn go" @click="showConfirm = true">立即更新</button>
       </template>
 
       <template v-else-if="hasUpdate && !store.updateSupported">
@@ -202,6 +199,21 @@ onBeforeUnmount(() => { document.removeEventListener("click", docClick); if (tim
           <span v-if="store.updating">回滚中…</span><span v-else>回滚上一版</span>
         </button>
       </template>
+    </div>
+
+    <!-- 更新确认弹窗：下载是长事务，开跑前须明确确认 -->
+    <div v-if="showConfirm" class="veil on" @click.self="showConfirm = false">
+      <div class="dlg" style="width:420px">
+        <header>
+          <h3>确认更新</h3>
+          <div class="hint">将下载并安装 v{{ store.latestVersion }}，完成后需重启服务生效；下载期间请保持页面打开。</div>
+        </header>
+        <footer>
+          <button :disabled="store.updating" @click="showConfirm = false">取消</button>
+          <span class="grow" />
+          <button class="primary" :disabled="store.updating" @click="apply">开始更新</button>
+        </footer>
+      </div>
     </div>
   </div>
 </template>

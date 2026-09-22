@@ -58,6 +58,11 @@ type Config struct {
 	// 在线更新入口——配置缺失不该等于功能失效。
 	UpdateRepo string `json:"update_repo"`
 
+	// UpdateProxy 更新流量的代理地址（http/https/socks5，对齐 sub2api 的
+	// update.proxy_url）。境内服务器直连 GitHub 下载域名常被断连（报
+	// fetch checksums / download 失败），配代理即可解决；空为直连。
+	UpdateProxy string `json:"update_proxy"`
+
 	Upstream struct {
 		TimeoutSeconds int `json:"timeout_seconds"`
 	} `json:"upstream"`

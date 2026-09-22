@@ -278,10 +278,10 @@ func TestNewerVersion(t *testing.T) {
 		{"v1.2.2", "v1.2.2", false},
 		{"v1.3.0", "v1.2.9", true},
 		{"v2.0.0", "v1.9.9", true},
-		{"v1.2.3", "dev", true},   // 开发构建总是可更新
-		{"v1.2.3", "", true},      // 无版本号同样提示
+		{"v1.2.3", "dev", true}, // 开发构建总是可更新
+		{"v1.2.3", "", true},    // 无版本号同样提示
 		{"v1.2.3-rc1", "v1.2.2", true},
-		{"", "v1.2.2", false},     // 无 tag 不提示
+		{"", "v1.2.2", false}, // 无 tag 不提示
 	}
 	for _, c := range cases {
 		if got := newerVersion(c.tag, c.current); got != c.want {

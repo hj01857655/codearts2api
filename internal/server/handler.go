@@ -56,6 +56,8 @@ type Config struct {
 
 	// UpdateRepo 在线更新的 GitHub 仓库（owner/name）；为空则不启用更新功能。
 	UpdateRepo string
+	// UpdateProxy 更新流量的代理地址（http/https/socks5）；空为直连。
+	UpdateProxy string
 }
 
 var dynamicModelsCache struct {
@@ -71,8 +73,8 @@ func (h *Handler) saveModelCache(infos []upstream.ModelInfo) {
 		return
 	}
 	payload := struct {
-		UpdatedAt int64                  `json:"updated_at"`
-		Models    []upstream.ModelInfo   `json:"models"`
+		UpdatedAt int64                `json:"updated_at"`
+		Models    []upstream.ModelInfo `json:"models"`
 	}{
 		UpdatedAt: time.Now().Unix(),
 		Models:    infos,
@@ -218,7 +220,8 @@ func NewHandler(cfg Config) *Handler {
 	h.loadModelCache()
 	// 在线更新：配置了 update_repo 才构造；未配置时面板会在检测时得到明确提示。
 	if cfg.UpdateRepo != "" {
-		h.updater = update.New(cfg.UpdateRepo, cfg.Version)
+		opts := []update.Option{update.WithProxy(cfg.UpdateProxy)}
+		h.updater = update.New(cfg.UpdateRepo, cfg.Version, opts...)
 	}
 	h.mux.HandleFunc("POST /v1/chat/completions", h.withAuth(h.chatCompletions))
 	h.mux.HandleFunc("GET /v1/models", h.withAuth(h.models))
@@ -600,7 +603,7 @@ func modelEntries(infos []upstream.ModelInfo) []map[string]any {
 			"context_window":            ctx,
 			"supports_function_calling": true,
 			"supports_tool_calling":     true,
-			"supports_reasoning":       true,
+			"supports_reasoning":        true,
 			"input_modalities":          []string{"text", "image"},
 			"output_modalities":         []string{"text"},
 			"supported_parameters": []string{

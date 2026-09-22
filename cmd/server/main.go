@@ -101,6 +101,7 @@ func main() {
 		Listen:            cfg.Listen,
 		Version:           version,
 		UpdateRepo:        cfg.UpdateRepo,
+		UpdateProxy:       cfg.UpdateProxy,
 		OAuthClient:       upstream.New(15 * time.Second),
 		LoginConfig:       loginConfig(cfg),
 		OAuthCallbackHost: cfg.OAuthCallbackHost,
