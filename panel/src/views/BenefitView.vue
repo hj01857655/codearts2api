@@ -13,7 +13,7 @@ function nameOf(uid: string): string {
   return a ? (a.nickname || a.name || uid) : uid;
 }
 function fmtTime(t?: number | string): string {
-  if (!t) return "从未领取";
+  if (!t) return "从未签到";
   const d = new Date(typeof t === "number" ? new Date(t).toISOString() : t);
   return isNaN(d.getTime()) ? String(t) : d.toLocaleString();
 }
@@ -58,7 +58,7 @@ async function claimAll() {
   confirmingClaim.value = false;
   claiming.value = true;
   try {
-    const d = await store.runAction("/admin/api/checkin", {}, "全部领取福利");
+    const d = await store.runAction("/admin/api/checkin", {}, "全部签到");
     if (d && d.results) store.applyBenefitResults(d.results);
   } finally { claiming.value = false; }
 }
@@ -72,13 +72,13 @@ async function claimAll() {
         <span class="grow" />
         <span class="note">{{ note }}</span>
         <button class="xs" :disabled="checking" @click="refresh">{{ checking ? "查询中…" : "刷新额度" }}</button>
-        <button class="xs primary" :disabled="claiming" @click="confirmingClaim = true">{{ claiming ? "领取中…" : "全部领取" }}</button>
+        <button class="xs primary" :disabled="claiming" @click="confirmingClaim = true">{{ claiming ? "签到中…" : "全部签到" }}</button>
       </header>
       <div class="tbl-wrap">
         <table class="acc">
           <thead><tr>
             <th class="mark" aria-hidden="true" />
-            <th>账号</th><th>上次领取</th><th>今日额度</th><th>今日已用</th><th>今日剩余</th><th>剩余占比</th><th>本月已用</th>
+            <th>账号</th><th>上次签到</th><th>今日额度</th><th>今日已用</th><th>今日剩余</th><th>剩余占比</th><th>本月已用</th>
           </tr></thead>
           <tbody>
             <tr v-if="!rows.length">
@@ -130,9 +130,9 @@ async function claimAll() {
     <ConfirmDialog
       v-if="confirmingClaim"
       :busy="claiming"
-      title="全部领取福利"
-      message="将对账号池内全部账号发起上游领取。领取是幂等操作（已领过的不会重复领取），但会逐个访问上游。"
-      confirm-label="全部领取"
+      title="全部签到"
+      message="将对账号池内全部账号发起今日签到。福利额度按日发放，需每天签到才能拿到当日额度；同一天内重复执行不会重复领取，但会逐个账号访问上游。"
+      confirm-label="全部签到"
       @confirm="claimAll"
       @cancel="confirmingClaim = false"
     />
