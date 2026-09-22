@@ -21,6 +21,17 @@ function pctColor(pct: number, has: boolean): string {
   if (!has) return "var(--ink-3)";
   return pct > 50 ? "var(--ok)" : pct > 20 ? "var(--warn)" : "var(--bad)";
 }
+// 今天是否已签到。额度按天发放，「上次签到」只有落在今天才算已签。
+// 与后端 upstream.ClaimedToday 同一判据：按本地自然日比较，不只看非 0。
+function signedToday(t?: number | string): boolean {
+  if (!t) return false;
+  const d = new Date(typeof t === "number" ? t : new Date(t).getTime());
+  if (isNaN(d.getTime())) return false;
+  const now = new Date();
+  return d.getFullYear() === now.getFullYear()
+    && d.getMonth() === now.getMonth()
+    && d.getDate() === now.getDate();
+}
 
 const rows = computed(() => {
   const results = store.benefit?.results || [];
@@ -28,7 +39,7 @@ const rows = computed(() => {
     const has = !!r.has_balance;
     const total = Number(r.total || 0), used = Number(r.used || 0), remain = Number(r.remain || 0);
     const pct = has && total > 0 ? Math.round((remain / total) * 100) : 0;
-    return { r, has, total, used, remain, pct, color: pctColor(pct, has) };
+    return { r, has, total, used, remain, pct, color: pctColor(pct, has), today: signedToday(r.create_time) };
   });
 });
 const totals = computed(() => {
@@ -48,6 +59,15 @@ const note = computed(() => {
   if (!results.length) return store.benefit ? "无数据" : "未查询";
   const c = totals.value.counted;
   return c === results.length ? results.length + " 个账号" : c + " / " + results.length + " 个账号有余额";
+});
+
+// 全部账号今日均已签到：此时再点「全部签到」只会得到「未重复领取」，
+// 故置灰。仅在结论可信时才置灰——没查过、上游没返回时间、或任一账号查询
+// 失败都不算，否则会把「不知道」当成「已签到」而挡住真正需要的签到。
+const allSignedToday = computed(() => {
+  const results = store.benefit?.results || [];
+  if (!results.length) return false;
+  return results.every((r) => r.ok && signedToday(r.create_time));
 });
 
 async function refresh() {
@@ -71,8 +91,15 @@ async function claimAll() {
         <h3>福利额度 <span class="hint">上游限时福利签到与余额</span></h3>
         <span class="grow" />
         <span class="note">{{ note }}</span>
-        <button class="xs" :disabled="checking" @click="refresh">{{ checking ? "查询中…" : "刷新额度" }}</button>
-        <button class="xs primary" :disabled="claiming" @click="confirmingClaim = true">{{ claiming ? "签到中…" : "全部签到" }}</button>
+        <button class="xs" :disabled="checking || claiming" @click="refresh">{{ checking ? "查询中…" : "刷新额度" }}</button>
+        <button
+          class="xs primary"
+          :disabled="claiming || checking || allSignedToday"
+          :title="allSignedToday ? '所有账号今日均已签到，无需重复操作' : ''"
+          @click="confirmingClaim = true"
+        >
+          {{ claiming ? "签到中…" : allSignedToday ? "今日已全部签到" : "全部签到" }}
+        </button>
       </header>
       <div class="tbl-wrap">
         <table class="acc">
@@ -94,6 +121,9 @@ async function claimAll() {
               <td class="num">
                 <span v-if="!row.r.ok" class="muted">查询失败</span>
                 <template v-else>{{ fmtTime(row.r.create_time) }}</template>
+                <span v-if="row.r.ok" class="tag" :class="row.today ? 'ok' : 'mute'">
+                  {{ row.today ? "今日已签" : "今日未签" }}
+                </span>
               </td>
               <td class="num">{{ row.has ? row.total.toLocaleString() : "—" }}</td>
               <td class="num muted">{{ row.has ? row.used.toLocaleString() : "—" }}</td>
